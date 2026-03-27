@@ -399,12 +399,36 @@ function renderMessageLog(id) {
   scheduleScroll();
 }
 
-// Render tool result content — truncated to 20 lines to keep UI scannable
+// Extract human-readable text from a tool result (plain string or JSON content array)
+function extractResultText(raw) {
+  const s = String(raw);
+  try {
+    const parsed = JSON.parse(s);
+    // Agent / MCP tools return an array of content blocks: [{type:'text', text:'...'}]
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter(b => b.type === 'text' && typeof b.text === 'string')
+        .map(b => b.text)
+        // Strip metadata-only blocks (agentId, <usage>, duration_ms)
+        .filter(t => !/^agentId:|^<usage>/.test(t.trimStart()))
+        .join('\n').trim() || s;
+    }
+    // Plain object — use first string value if unambiguous
+    if (typeof parsed === 'object' && parsed !== null) {
+      const vals = Object.values(parsed).filter(v => typeof v === 'string');
+      if (vals.length === 1) return vals[0];
+    }
+  } catch (_) {}
+  return s;
+}
+
+// Render tool result content — truncated to 30 lines to keep UI scannable
 function makeResultEl(text) {
   const out = document.createElement('div');
   out.className = 'tool-result';
-  const lines = String(text).split('\n');
-  const MAX = 20;
+  const content = extractResultText(text);
+  const lines = content.split('\n');
+  const MAX = 30;
   const visible = lines.slice(0, MAX).join('\n');
   const overflow = lines.length - MAX;
   out.textContent = overflow > 0 ? visible + `\n… ${overflow} more lines` : visible;
