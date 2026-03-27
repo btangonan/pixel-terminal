@@ -6,6 +6,56 @@ struct SlashCommand {
     description: String,
 }
 
+/// Strip YAML frontmatter (--- block) from markdown content.
+fn strip_frontmatter(content: &str) -> String {
+    if let Some(rest) = content.strip_prefix("---\n") {
+        if let Some(idx) = rest.find("\n---") {
+            let after = &rest[idx + 4..]; // skip past "\n---"
+            return after.trim_start_matches('\n').to_string();
+        }
+    }
+    content.to_string()
+}
+
+/// Read the full body of a slash command file by its frontmatter name.
+/// Scans ~/.claude/commands/ (one level of subdirs), matches by name: field,
+/// returns content with frontmatter stripped. Returns None if not found.
+#[tauri::command]
+fn read_slash_command_content(name: String) -> Option<String> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let dir = format!("{}/.claude/commands", home);
+    find_command_content(&dir, &name, None)
+}
+
+fn find_command_content(dir: &str, target: &str, prefix: Option<&str>) -> Option<String> {
+    let entries = fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() && prefix.is_none() {
+            let ns = path.file_name()?.to_str()?.to_string();
+            let subdir = path.to_string_lossy().to_string();
+            if let Some(content) = find_command_content(&subdir, target, Some(&ns)) {
+                return Some(content);
+            }
+        } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
+            let content = match fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            if let Some(cmd) = parse_frontmatter(&content) {
+                let full_name = match prefix {
+                    Some(ns) => format!("{}:{}", ns, cmd.name),
+                    None => cmd.name,
+                };
+                if full_name == target {
+                    return Some(strip_frontmatter(&content));
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Read ~/.claude/commands/ recursively (one level of subdirs) and return
 /// name+description from YAML frontmatter. Subdir commands are prefixed:
 /// sm/introspect.md → name "sm:introspect"
@@ -72,7 +122,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![read_slash_commands])
+        .invoke_handler(tauri::generate_handler![read_slash_commands, read_slash_command_content])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

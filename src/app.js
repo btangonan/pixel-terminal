@@ -60,21 +60,21 @@ class SpriteRenderer {
 
   setStatus(status) {
     if (this._status === status) return;
-    const wasInactive = this._status === 'idle' || this._status === 'error';
+    const wasInactive = this._status === 'idle' || this._status === 'error' || this._status === 'waiting';
     this._status = status;
     this._frameIdx = 0;
     this._lastTs = 0; // reset so first frame of new state doesn't skip delay
     this.el.style.backgroundPosition = '0 0'; // snap to frame 0 immediately
-    this._FPS = status === 'working' ? 3 : status === 'waiting' ? 2 : 3;
-    // Restart loop when transitioning from a paused (idle/error) state
-    const isInactive = status === 'idle' || status === 'error';
+    this._FPS = 3;
+    // Animate only during active work — waiting/idle/error hold frame 0
+    const isInactive = status === 'idle' || status === 'error' || status === 'waiting';
     if (wasInactive && !isInactive && !this._raf) this._startLoop();
   }
 
   _startLoop() {
     const loop = (ts) => {
-      // Self-cancel when idle/error — don't keep spinning at 60fps doing nothing
-      if (this._status === 'idle' || this._status === 'error') {
+      // Self-cancel when inactive — don't keep spinning at 60fps doing nothing
+      if (this._status === 'idle' || this._status === 'error' || this._status === 'waiting') {
         this._raf = null;
         return;
       }
@@ -147,6 +147,10 @@ async function createSession(cwd, opts = {}) {
     toolPending: {},
     readOnly: !!opts.readOnly,
     unread: false,
+    tokens: 0,
+    _liveTokens: 0,
+    _dotsPhase: 0,
+    _pendingMsg: null,
   };
   sessions.set(id, session);
 
@@ -165,7 +169,6 @@ async function createSession(cwd, opts = {}) {
 async function spawnClaude(id) {
   const s = sessions.get(id);
   if (!s) return;
-
   try {
     const claudeArgs = [
       '-p',
@@ -194,6 +197,7 @@ async function spawnClaude(id) {
 
     cmd.on('close', (data) => {
       const code = (typeof data === 'object' && data !== null) ? data.code : data;
+      s.child = null;
       setStatus(id, code === 0 ? 'idle' : 'error');
       pushMessage(id, { type: 'system-msg', text: `Session ended (exit ${code})` });
     });
@@ -201,6 +205,7 @@ async function spawnClaude(id) {
     const child = await cmd.spawn();
     s.child = child;
     s.toolPending = {};
+    // _pendingMsg is flushed in system/init handler — Claude only reads stdin after that event
 
   } catch (err) {
     pushMessage(id, { type: 'error', text: `Failed to start Claude Code: ${err}` });
@@ -230,19 +235,65 @@ function killSession(id) {
   }
 }
 
+// Returns true and shows a warning if text looks like an unrecognized slash command.
+// Guard: skips check when _slashCommands is empty (load may have failed).
+function warnIfUnknownCommand(id, text) {
+  if (!_slashCommands.length) return false; // can't validate — pass through
+  const m = text.match(/^\/([^\s\/]+)/);
+  if (!m) return false;
+  const name = m[1];
+  if (_slashCommands.find(c => c.name === name)) return false;
+  pushMessage(id, { type: 'warn', text: `Unknown command: /${name}` });
+  return true;
+}
+
+// Expand /commandname messages by reading the skill file content.
+// Only expands if text starts with /name matching a known slash command.
+// Shows original text in log — sends expanded content to Claude.
+async function expandSlashCommand(text) {
+  const m = text.match(/^\/([^\s]+)(?:\s+([\s\S]*))?$/);
+  if (!m) return text;
+  const [, cmdName, args = ''] = m;
+  if (!_slashCommands.find(c => c.name === cmdName)) return text;
+  try {
+    const body = await invoke('read_slash_command_content', { name: cmdName });
+    if (!body) return text;
+    return args.trim() ? body + '\n\nARGUMENTS: ' + args.trim() : body;
+  } catch (_) {
+    return text;
+  }
+}
+
 async function sendMessage(id, text) {
   const s = sessions.get(id);
-  if (!s || !s.child || !text.trim()) return;
+  if (!s || !text.trim()) return;
 
-  pushMessage(id, { type: 'user', text: text.trim() });
+  const raw = text.trim();
+
+  if (warnIfUnknownCommand(id, raw)) return;
+
+  if (!s.child) {
+    // Process still spawning — queue until system/init fires.
+    // Don't pushMessage yet — show it after "Ready" so log order is correct.
+    s._pendingMsg = raw;
+    setStatus(id, 'working'); // badge reacts immediately
+    return;
+  }
+
+  const expanded = await expandSlashCommand(raw);
+  pushMessage(id, { type: 'user', text: raw }); // show original in log
   setStatus(id, 'working');
 
   const line = JSON.stringify({
     type: 'user',
-    message: { role: 'user', content: text.trim() }
+    message: { role: 'user', content: expanded }
   }) + '\n';
-
-  await s.child.write(line);
+  try {
+    await s.child.write(line);
+  } catch (err) {
+    pushMessage(id, { type: 'error', text: 'Send failed — please retry' });
+    setStatus(id, 'idle');
+  }
 }
 
 // ── Event handler ──────────────────────────────────────────
@@ -256,6 +307,13 @@ function handleEvent(id, event) {
     case 'assistant': {
       // Cancel any pending idle debounce — Claude is still going
       clearTimeout(s._idleTimer);
+      if (event.message?.usage) {
+        s._lastMsgUsage = event.message.usage;
+        const u = event.message.usage;
+        // Only count input+output — cache_read recurs every turn (already-counted context),
+        // causing exponential inflation. cache_creation has the same problem.
+        s._liveTokens = (u.input_tokens || 0) + (u.output_tokens || 0);
+      }
       const blocks = event.message?.content || [];
 
       const texts = blocks.filter(b => b.type === 'text').map(b => b.text);
@@ -272,7 +330,8 @@ function handleEvent(id, event) {
           s.toolPending[b.id] = true;
         }
       }
-      setStatus(id, 'working');
+      setStatus(id, 'working'); // no-op if already working — so always refresh card for live tokens
+      updateSessionCard(id);
       break;
     }
 
@@ -296,7 +355,6 @@ function handleEvent(id, event) {
               const toolEl = log?.querySelector(`[data-tool-id="${b.tool_use_id}"]`);
               if (toolEl) {
                 toolEl.querySelector('.tool-status').textContent = '✓';
-                if (!toolEl.querySelector('.tool-result')) toolEl.appendChild(makeResultEl(resultText));
               }
             }
           }
@@ -306,7 +364,13 @@ function handleEvent(id, event) {
       break;
     }
 
-    case 'result':
+    case 'result': {
+      // Prefer result.usage (per-turn total); fall back to live tokens already shown
+      const u = event.usage || s._lastMsgUsage;
+      if (u) s.tokens += (u.input_tokens || 0) + (u.output_tokens || 0);
+      else s.tokens += s._liveTokens; // result.usage absent and no assistant usage either
+      s._liveTokens = 0;
+      s._lastMsgUsage = null;
       // Debounce: Claude may immediately start another turn after result.
       // Wait 400ms before going idle so the cursor doesn't flicker between turns.
       clearTimeout(s._idleTimer);
@@ -318,11 +382,28 @@ function handleEvent(id, event) {
         }
       }, 400);
       break;
+    }
 
     case 'system':
       if (event.subtype === 'init') {
         pushMessage(id, { type: 'system-msg', text: `Ready · ${event.model || 'claude'}` });
-        setStatus(id, 'idle');
+        // Don't clobber 'working' — user may have queued a message before init
+        if (s.status !== 'working') setStatus(id, 'idle');
+        // Flush message queued before Claude was ready.
+        // pushMessage here so it appears AFTER "Ready" in the log.
+        if (s._pendingMsg && s.child) {
+          const msg = s._pendingMsg;
+          s._pendingMsg = null;
+          if (warnIfUnknownCommand(id, msg)) break;
+          pushMessage(id, { type: 'user', text: msg }); // show original
+          expandSlashCommand(msg).then(expanded => {
+            if (!s.child) return;
+            return s.child.write(JSON.stringify({ type: 'user', message: { role: 'user', content: expanded } }) + '\n');
+          }).catch(() => {
+            pushMessage(id, { type: 'error', text: 'Failed to send — please resend your message' });
+            setStatus(id, 'idle');
+          });
+        }
       }
       break;
 
@@ -337,6 +418,7 @@ function handleEvent(id, event) {
 function setStatus(id, status) {
   const s = sessions.get(id);
   if (!s || s.status === status) return;
+  if (status === 'working') s._dotsPhase = 0; // always start from "" on new working transition
   s.status = status;
   updateSessionCard(id);
   if (activeSessionId === id) updateWorkingCursor(status);
@@ -369,7 +451,7 @@ function updateWorkingCursor(status) {
   const log = document.getElementById('message-log');
   if (!log) return;
   let cur = document.getElementById('working-cursor');
-  if (status === 'working' || status === 'waiting') {
+  if (status === 'working') {
     if (!cur) {
       cur = document.createElement('div');
       cur.id = 'working-cursor';
@@ -386,14 +468,11 @@ function updateWorkingCursor(status) {
     }
     const textNode = cur.lastChild;
     const setMsg = () => {
-      const label = status === 'waiting' ? 'waiting' : WORKING_MSGS[_workingMsgIdx++ % WORKING_MSGS.length];
-      textNode.textContent = ' ' + label + '…';
+      textNode.textContent = ' ' + WORKING_MSGS[_workingMsgIdx++ % WORKING_MSGS.length] + '…';
     };
     setMsg();
     clearInterval(_workingTimer);
-    if (status === 'working') {
-      _workingTimer = setInterval(setMsg, 3000);
-    }
+    _workingTimer = setInterval(setMsg, 3000);
   } else {
     clearInterval(_workingTimer);
     _workingTimer = null;
@@ -449,46 +528,10 @@ function renderMessageLog(id) {
   }
   // Always restore cursor to match current session status
   const s = sessions.get(id);
-  if (s && (s.status === 'working' || s.status === 'waiting')) {
+  if (s && s.status === 'working') {
     updateWorkingCursor(s.status);
   }
   scheduleScroll();
-}
-
-// Extract human-readable text from a tool result (plain string or JSON content array)
-function extractResultText(raw) {
-  const s = String(raw);
-  try {
-    const parsed = JSON.parse(s);
-    // Agent / MCP tools return an array of content blocks: [{type:'text', text:'...'}]
-    if (Array.isArray(parsed)) {
-      return parsed
-        .filter(b => b.type === 'text' && typeof b.text === 'string')
-        .map(b => b.text)
-        // Strip metadata-only blocks (agentId, <usage>, duration_ms)
-        .filter(t => !/^agentId:|^<usage>/.test(t.trimStart()))
-        .join('\n').trim() || s;
-    }
-    // Plain object — use first string value if unambiguous
-    if (typeof parsed === 'object' && parsed !== null) {
-      const vals = Object.values(parsed).filter(v => typeof v === 'string');
-      if (vals.length === 1) return vals[0];
-    }
-  } catch (_) {}
-  return s;
-}
-
-// Render tool result content — truncated to 30 lines to keep UI scannable
-function makeResultEl(text) {
-  const out = document.createElement('div');
-  out.className = 'tool-result';
-  const content = extractResultText(text);
-  const lines = content.split('\n');
-  const MAX = 30;
-  const visible = lines.slice(0, MAX).join('\n');
-  const overflow = lines.length - MAX;
-  out.textContent = overflow > 0 ? visible + `\n… ${overflow} more lines` : visible;
-  return out;
 }
 
 function createMsgEl(msg) {
@@ -518,16 +561,25 @@ function createMsgEl(msg) {
     const status = hasResult ? '✓' : '…';
     el.dataset.toolId = msg.toolId;
     el.innerHTML = `<div class="tool-line">${icon} <span class="tool-name">${esc(msg.toolName)}</span>${hint ? ` <span class="tool-hint">${esc(hint)}</span>` : ''} <span class="tool-status">${status}</span></div>`;
-    if (hasResult) el.appendChild(makeResultEl(msg.result));
 
   } else if (msg.type === 'system-msg') {
     el.innerHTML = `<div class="system-label">${esc(msg.text)}</div>`;
 
   } else if (msg.type === 'error') {
     el.innerHTML = `<div class="error-msg">${esc(msg.text)}</div>`;
+  } else if (msg.type === 'warn') {
+    el.innerHTML = `<div class="warn-msg">${esc(msg.text)}</div>`;
   }
 
   return el;
+}
+
+// ── Token formatting ────────────────────────────────────────
+
+function formatTokens(n) {
+  const t = n || 0;
+  if (t < 1_000_000) return '~' + Math.round(t / 1000) + 'K';
+  return '~' + (t / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
 }
 
 // ── Session cards ──────────────────────────────────────────
@@ -544,6 +596,7 @@ function renderSessionCard(id) {
       <div class="sprite-wrap" id="card-sprite-wrap-${id}"></div>
       <div class="session-card-info">
         <div class="session-card-name">${esc(s.name)}</div>
+        <div class="session-card-tokens" id="card-tokens-${id}"></div>
       </div>
       <span class="card-badge" id="card-status-${id}"></span>
     </div>
@@ -577,12 +630,17 @@ function updateSessionCard(id) {
     if (s.unread) {
       statusEl.textContent = 'NEW';
       statusEl.className = 'card-badge unread';
-      statusEl.style.display = '';
     } else {
-      statusEl.textContent = s.status === 'idle' ? 'IDLE' : s.status === 'error' ? 'ERR' : '';
+      const label = { idle: 'IDLE', error: 'ERR', working: '.'.repeat(s._dotsPhase || 0), waiting: '···' }[s.status] ?? '···';
+      statusEl.textContent = label;
       statusEl.className = `card-badge ${s.status}`;
-      statusEl.style.display = (s.status === 'idle' || s.status === 'error') ? '' : 'none';
     }
+    statusEl.style.display = '';
+  }
+
+  const tokensEl = document.getElementById(`card-tokens-${id}`);
+  if (tokensEl) {
+    tokensEl.textContent = formatTokens(s.tokens + (s._liveTokens || 0));
   }
 
   const card = document.getElementById(`card-${id}`);
@@ -609,14 +667,11 @@ function setActiveSession(id) {
 // ── View helpers ───────────────────────────────────────────
 
 function showEmptyState() {
-  document.getElementById('msg-input').disabled = true;
-  document.getElementById('btn-send').disabled = true;
   document.getElementById('message-log').innerHTML = '';
 }
 
 function showChatView() {
-  document.getElementById('msg-input').disabled = false;
-  document.getElementById('btn-send').disabled = false;
+  // intentionally no-op — never disable controls in a terminal app
 }
 
 
@@ -874,6 +929,27 @@ window.addEventListener('DOMContentLoaded', () => {
 
   loadSlashCommands();
 
+  // Animate working badge: per-session phase cycles "" "." ".." "..." every 400ms
+  setInterval(() => {
+    sessions.forEach((s, id) => {
+      if (s.status === 'working' && !s.unread) {
+        s._dotsPhase = (s._dotsPhase + 1) % 4;
+        const el = document.getElementById(`card-status-${id}`);
+        if (el) el.textContent = '.'.repeat(s._dotsPhase);
+      }
+    });
+  }, 400);
+
+  // Open links in system browser — prevent Tauri webview from navigating away
+  document.getElementById('message-log').addEventListener('click', (e) => {
+    const link = e.target.closest('a[href]');
+    if (!link) return;
+    const href = link.getAttribute('href');
+    if (!href || href.startsWith('#')) return;
+    e.preventDefault();
+    window.__TAURI__.opener.openUrl(href);
+  });
+
   // Track whether user has scrolled up — suppress auto-scroll if so
   document.getElementById('message-log').addEventListener('scroll', () => {
     const log = document.getElementById('message-log');
@@ -896,7 +972,7 @@ window.addEventListener('DOMContentLoaded', () => {
   });
   window.addEventListener('mousemove', (e) => {
     if (!_resizing) return;
-    _resizeW = Math.max(80, Math.min(320, _resizeStartW + (e.clientX - _resizeStartX)));
+    _resizeW = Math.max(80, Math.min(340, _resizeStartW + (e.clientX - _resizeStartX)));
     if (!_resizeRafId) {
       _resizeRafId = requestAnimationFrame(() => {
         sidebar.style.width = _resizeW + 'px';
@@ -933,12 +1009,26 @@ window.addEventListener('DOMContentLoaded', () => {
     if (menuVisible) {
       if (e.key === 'ArrowDown')  { e.preventDefault(); moveSlashSelection(1); return; }
       if (e.key === 'ArrowUp')    { e.preventDefault(); moveSlashSelection(-1); return; }
-      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+      if (e.key === 'Tab') {
+        e.preventDefault(); acceptActiveSlashItem(); return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey && _slashActiveIdx >= 0) {
+        // Only accept if user explicitly navigated to an item with arrow keys
         e.preventDefault(); acceptActiveSlashItem(); return;
       }
       if (e.key === 'Escape')     { e.preventDefault(); hideSlashMenu(); return; }
     }
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); document.getElementById('btn-send').click(); }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      const input = document.getElementById('msg-input');
+      const text = input.value;
+      if (!text.trim() || !activeSessionId) return;
+      input.value = '';
+      input.style.height = '';
+      _pinToBottom = true;
+      hideSlashMenu();
+      sendMessage(activeSessionId, text);
+    }
   });
 
   document.getElementById('msg-input').addEventListener('input', (e) => {
