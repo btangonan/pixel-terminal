@@ -9,7 +9,17 @@
     "core:window:allow-close",
     "core:window:allow-destroy",
     "opener:default",
-    "shell:allow-execute",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "test",
+          "cmd": "/bin/test",
+          "args": true,
+          "sidecar": false
+        }
+      ]
+    },
     {
       "identifier": "shell:allow-spawn",
       "allow": [

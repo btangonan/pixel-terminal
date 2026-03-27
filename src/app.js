@@ -103,7 +103,7 @@ async function isSelfDirectory(cwd) {
       const cmd = Command.create('test', ['-f', dir + '/.pixel-terminal']);
       const out = await cmd.execute();
       if (out.code === 0) return true;
-    } catch (_) {}
+    } catch (err) { console.warn('isSelfDirectory check failed:', err); }
     const parent = dir.replace(/\/[^/]+$/, '');
     if (!parent || parent === dir) break;
     dir = parent;
@@ -163,7 +163,7 @@ async function createSession(cwd, opts = {}) {
       '--verbose',        // required by Claude when using --print + stream-json
       '--permission-mode', 'acceptEdits',
     ];
-    if (opts.readOnly) claudeArgs.push('--disallowed-tools', 'Edit,Write,MultiEdit,NotebookEdit');
+    if (opts.readOnly) claudeArgs.push('--disallowed-tools', 'Edit,Write,MultiEdit,NotebookEdit,Bash');
     const cmd = Command.create('claude', claudeArgs, { cwd });
 
     // Line buffer: stdout arrives in chunks — accumulate until newline before parsing.
