@@ -8,8 +8,6 @@
  *   window.marked  (from marked.umd.js)
  */
 
-'use strict';
-
 // ── Tauri + marked globals ─────────────────────────────────
 
 const { Command } = window.__TAURI__.shell;
