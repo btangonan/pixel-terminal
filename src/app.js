@@ -1465,4 +1465,16 @@ window.addEventListener('DOMContentLoaded', () => {
       appWindow.close();
     }
   });
+
+  // About dialog — triggered by Rust menu event
+  const aboutOverlay = document.getElementById('about-overlay');
+  document.getElementById('about-close')?.addEventListener('click', () => {
+    aboutOverlay?.classList.add('hidden');
+  });
+  aboutOverlay?.addEventListener('click', (e) => {
+    if (e.target === aboutOverlay) aboutOverlay.classList.add('hidden');
+  });
+  tauriListen('show-about', () => {
+    aboutOverlay?.classList.remove('hidden');
+  });
 });

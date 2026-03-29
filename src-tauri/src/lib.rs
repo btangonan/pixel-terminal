@@ -1,5 +1,10 @@
 use std::fs;
 
+use tauri::{
+    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
+    Emitter, Manager,
+};
+
 mod ws_bridge;
 use ws_bridge::{ptt_release, ptt_start, set_omi_listening, set_voice_mode, switch_voice_source, sync_omi_sessions};
 
@@ -127,6 +132,46 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             ws_bridge::init(app)?;
+
+            // Custom menu — replaces "About pixel-terminal" with "About Pixel Claude"
+            // and intercepts the About action to show our styled dialog.
+            let about_i = MenuItem::with_id(app, "about", "About Pixel Claude", true, None::<&str>)?;
+            let app_menu = Submenu::with_items(app, "Pixel Claude", true, &[
+                &about_i,
+                &PredefinedMenuItem::separator(app)?,
+                &PredefinedMenuItem::services(app, None)?,
+                &PredefinedMenuItem::separator(app)?,
+                &PredefinedMenuItem::hide(app, None)?,
+                &PredefinedMenuItem::hide_others(app, None)?,
+                &PredefinedMenuItem::show_all(app, None)?,
+                &PredefinedMenuItem::separator(app)?,
+                &PredefinedMenuItem::quit(app, None)?,
+            ])?;
+            let edit_menu = Submenu::with_items(app, "Edit", true, &[
+                &PredefinedMenuItem::undo(app, None)?,
+                &PredefinedMenuItem::redo(app, None)?,
+                &PredefinedMenuItem::separator(app)?,
+                &PredefinedMenuItem::cut(app, None)?,
+                &PredefinedMenuItem::copy(app, None)?,
+                &PredefinedMenuItem::paste(app, None)?,
+                &PredefinedMenuItem::select_all(app, None)?,
+            ])?;
+            let window_menu = Submenu::with_items(app, "Window", true, &[
+                &PredefinedMenuItem::minimize(app, None)?,
+                &PredefinedMenuItem::maximize(app, None)?,
+                &PredefinedMenuItem::close_window(app, None)?,
+            ])?;
+            let menu = Menu::with_items(app, &[&app_menu, &edit_menu, &window_menu])?;
+            app.set_menu(menu)?;
+
+            app.on_menu_event(|app, event| {
+                if event.id() == "about" {
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.emit("show-about", ());
+                    }
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -10,7 +10,19 @@
   <script src="marked.umd.js"></script>
 </head>
 <body>
-  <div id="drag-region" data-tauri-drag-region></div>
+  <div id="drag-region" data-tauri-drag-region>
+    <img src="logo-pxc.svg" id="app-logo" alt="PxC" />
+  </div>
+  <div id="about-overlay" class="hidden">
+    <div id="about-box">
+      <img src="logo-pxc.svg" id="about-logo" alt="PxC" />
+      <div id="about-name">PIXEL CLAUDE</div>
+      <div id="about-meta">v0.1.0 — BRADLEY TANGONAN</div>
+      <div id="about-btns">
+        <button id="about-close">close</button>
+      </div>
+    </div>
+  </div>
   <div id="confirm-overlay" class="hidden">
     <div id="confirm-box">
       <div id="confirm-msg"></div>
@@ -25,7 +37,6 @@
     <!-- SIDEBAR -->
     <div id="sidebar">
       <div id="sidebar-header">
-        <img src="logo.svg" id="app-logo" alt="Pixel Terminal" />
         <span class="pixel-label">SESSIONS</span>
         <button id="btn-new-session" title="New Session">＋</button>
       </div>
