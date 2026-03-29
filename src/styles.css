@@ -107,7 +107,9 @@ body {
 #btn-new-session:hover { border-color: var(--accent); }
 
 #session-list {
-  flex: 1;
+  /* flex: 1 replaced — shares sidebar with voice-log */
+  flex: 1 1 60%;
+  min-height: 80px;
   overflow-y: auto;
   padding: 4px 3px;
   display: flex;
@@ -618,3 +620,48 @@ canvas.sprite-canvas {
   box-shadow: 0 0 5px #39ff1488;
   opacity: 1;
 }
+
+/* ── Voice log transcript panel ─── */
+#voice-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px 4px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#btn-clear-voice-log {
+  font-family: var(--font-mono, monospace);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-mute);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: 0.5;
+}
+#btn-clear-voice-log:hover { opacity: 1; }
+#voice-log {
+  flex: 1 1 40%;
+  min-height: 60px;
+  overflow-y: auto;
+  padding: 5px 8px;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  line-height: 1.55;
+  color: var(--text-mute);
+}
+#voice-log::-webkit-scrollbar { width: 3px; }
+#voice-log::-webkit-scrollbar-track { background: transparent; }
+#voice-log::-webkit-scrollbar-thumb { background: var(--border-hi); }
+.voice-entry { word-break: break-word; }
+.voice-entry .ts {
+  color: var(--accent, #39ff14);
+  margin-right: 5px;
+  opacity: 0.5;
+  font-size: 9px;
+}
+.voice-entry.dispatched { color: var(--text); }
+.voice-entry.dispatched .ts { opacity: 0.9; }

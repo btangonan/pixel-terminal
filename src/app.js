@@ -1168,7 +1168,13 @@ window.addEventListener('DOMContentLoaded', () => {
 
   tauriListen('omi:command', (event) => {
     if (!omiListening) return;  // JS-side guard (belt-and-suspenders vs Rust mute)
-    const { type, text, session } = event.payload;
+    const { type, text, session, ts, dispatched } = event.payload;
+
+    if (type === 'transcript') {
+      appendVoiceLog(text, ts, dispatched);
+      return;
+    }
+
     const targetId = resolveSession(session ?? null);
     if (!targetId) return;
     if (type === 'prompt') {
@@ -1181,6 +1187,32 @@ window.addEventListener('DOMContentLoaded', () => {
         .join('\n');
       pushMessage(activeSessionId, { type: 'system-msg', text: `Omi sessions:\n${lines}` });
     }
+  });
+
+  // ── Voice log (transcript sidebar) ────────────────────────
+  const MAX_VOICE_LOG = 200;
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function appendVoiceLog(text, ts, dispatched) {
+    const log = document.getElementById('voice-log');
+    if (!log || !text) return;
+    const entry = document.createElement('div');
+    entry.className = 'voice-entry' + (dispatched ? ' dispatched' : '');
+    entry.innerHTML = `<span class="ts">${escapeHtml(ts || '')}</span>${dispatched ? '▶ ' : ''}${escapeHtml(text)}`;
+    log.appendChild(entry);
+    while (log.children.length > MAX_VOICE_LOG) log.removeChild(log.firstChild);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  document.getElementById('btn-clear-voice-log')?.addEventListener('click', () => {
+    const log = document.getElementById('voice-log');
+    if (log) log.innerHTML = '';
   });
 
   tauriListen('omi:connected', () => {
