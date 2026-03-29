@@ -1167,13 +1167,15 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   tauriListen('omi:command', (event) => {
-    if (!omiListening) return;  // JS-side guard (belt-and-suspenders vs Rust mute)
     const { type, text, session, ts, dispatched } = event.payload;
 
+    // Transcript events always show in the voice log, even when muted
     if (type === 'transcript') {
       appendVoiceLog(text, ts, dispatched);
       return;
     }
+
+    if (!omiListening) return;  // JS-side mute guard — commands only
 
     const targetId = resolveSession(session ?? null);
     if (!targetId) return;
