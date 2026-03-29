@@ -668,7 +668,7 @@ canvas.sprite-canvas {
 /* ── Settings button + panel ─── */
 #settings-btn {
   font-family: var(--font-mono, monospace);
-  font-size: 11px;
+  font-size: 16px;
   color: var(--text-mute);
   background: transparent;
   border: none;

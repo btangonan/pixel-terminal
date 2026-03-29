@@ -250,6 +250,12 @@ async function spawnClaude(id) {
     cmd.on('close', (data) => {
       const code = (typeof data === 'object' && data !== null) ? data.code : data;
       s.child = null;
+      if (s._interrupting) {
+        // Intentional ESC interrupt — suppress error status and "Session ended" message.
+        // spawnClaude() already called; this close event is the killed process finishing.
+        s._interrupting = false;
+        return;
+      }
       setStatus(id, code === 0 ? 'idle' : 'error');
       pushMessage(id, { type: 'system-msg', text: `Session ended (exit ${code})` });
     });
@@ -440,8 +446,10 @@ function handleEvent(id, event) {
     case 'system':
       if (event.subtype === 'init') {
         pushMessage(id, { type: 'system-msg', text: `Ready · ${event.model || 'claude'}` });
-        // Don't clobber 'working' — user may have queued a message before init
-        if (s.status !== 'working') setStatus(id, 'idle');
+        // After ESC restart, always go idle regardless of status.
+        // Otherwise: don't clobber 'working' if user queued a message before init.
+        if (s._restarting || s.status !== 'working') setStatus(id, 'idle');
+        s._restarting = false;
         // Flush message queued before Claude was ready.
         // pushMessage here so it appears AFTER "Ready" in the log.
         if (s._pendingMsg && s.child) {
@@ -1121,11 +1129,13 @@ window.addEventListener('DOMContentLoaded', () => {
       const s = sessions.get(activeSessionId);
       if (s && s.child && (s.status === 'working' || s.status === 'waiting')) {
         e.preventDefault();
+        s._interrupting = true;
         try { s.child.kill(); } catch (_) {}
         s.child = null;
         clearTimeout(s._idleTimer);
         pushMessage(activeSessionId, { type: 'system-msg', text: 'Interrupted — restarting…' });
-        setStatus(activeSessionId, 'working');
+        setStatus(activeSessionId, 'waiting');
+        s._restarting = true;
         spawnClaude(activeSessionId);
       }
     }
