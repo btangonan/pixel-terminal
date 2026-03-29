@@ -17,7 +17,7 @@ EOF
 # Start pixel_voice_bridge (local mic, always-on) in a new terminal tab
 osascript <<'EOF'
 tell application "Terminal"
-  do script "cd ~/Projects/OmiWebhook && source venv/bin/activate && python3 pixel_voice_bridge.py"
+  do script "cd ~/Projects/OmiWebhook && source venv/bin/activate && python3 pixel_voice_bridge.py --ble"
 end tell
 EOF
 
