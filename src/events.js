@@ -140,7 +140,13 @@ export function handleEvent(id, event) {
       break;
 
     case 'rate_limit_event':
-      pushMessage(id, { type: 'system-msg', text: `Rate limited \u2014 retrying\u2026` });
+      // CLI retries automatically — don't add a permanent log entry (looks like an error).
+      // Flash badge to 'waiting' for 3s so there's ambient feedback without alarming the user.
+      setStatus(id, 'waiting');
+      clearTimeout(s._rateLimitTimer);
+      s._rateLimitTimer = setTimeout(() => {
+        if (s.status === 'waiting') setStatus(id, 'working');
+      }, 3000);
       break;
   }
 }
