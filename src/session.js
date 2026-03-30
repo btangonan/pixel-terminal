@@ -40,17 +40,19 @@ const SPRITE_DATA = {
   'cat2-120': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAAQCAYAAACm53kpAAABuElEQVR4nO1XsUpDMRTNC0W0hYKgQh11EcFR/AAXFx0Ef6Bz0d1ZxLXiqps/UBH8heImIi7iIioqCK2t4hI5sSeER16atA7K88Club335OZc7strE6WUyDOkyDmkyDuUUpk2MVZUPt9lNpDv8/thWL4P5rzKI/74dkfhk0Y/pAE+fqj4YfjcI8vneQu+Dfbaj6LSrIrR667xY4D88sGKXpcWpwfio37n/D66PsTWr7bF1vyuEU3/5b2b8LuCb5PPm1cxMjsuPuaKYlBAOEEhoUA++PYeP91A6SJOFku6axC/PLVhDsM14y70Hp8W1shncawppN8YM458V/3Qx4C1fU2UaeGw527HjEjjtK43aqzu6zVgx1Pct168TC54mt/jAvYIpoXD7Lirfj9+TAOlLQDjQkDkw9KR6dzayaZo1c6c4olKs1ridCAP+eDxMNjPd3i7PvJc9UP4MQ2UWWIgxL7AYCjgG38X3x4/8GPeAq76ofzQBkoXOUm+c0hGB+0LDPG0xfBDMQw/tIEyTWQSybH4TfygBirrBwyICxc1fYnMHK5ru3y6MxcL11nF/xKfupP/f4Mi3/gCz0T8VCgxpfMAAAAASUVORK5CYII=',
   'cat2-195': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAAQCAYAAACm53kpAAAByklEQVR4nOVWPUsDQRDdW0Q0Ab9ibGKljY2dQbC1NmV+hFhZWouNYGXrD9Ay4l8QQqwkARux0caPKKJRBFl5y80xHLt7u14R5R4st5Odt7NvMrN3kVJKFBlSFBxSFB1KKeuYmR1XLts0OODvsrOQl+9Ccl7lEL9701N40iDbJwEuvq/4PHzaw2bTeSPbJVipllSt2dbzscGVfn6WlsTdyap4ehhEtqBRFCXBwH+/7Wi7PF/XT/D7jx9WPj8sxed7hPC3OxfioL6S/EY2+KR7xLXJ1/O1GJ1e1MJ/CxLOhfgC/uDzPUJwvP8t+J8A2+sSrFRLOj0Qvz45lxyG5rRuQtw+r5jDn4JjTkKyypjW4W+K79sGvHJsSZRp4Ri8xFu9M71Ra29DzwFTC8Tct3h9grjgaX7MBWwlTL3O103xs/ghCZRcAPUciUS/UeYaO6fi5XzL2f+1ZrtM1QE/+IPn07+850mkKb4PPySB0iYGQqbWDpPDYyCAq/xNfF5+4Ie8BUzxffm+CZSum5zIyCC/wLCeHiF8X+Th+yZQponkRORQ/CW+VwIV+4ABcXnzUl8iC40jPbrd++Riobkt+H/iZ34IFQVy2AcYNn4ATvoJHwPkVVIAAAAASUVORK5CYII=',
   'cat2-270': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAAQCAYAAACm53kpAAABwUlEQVR4nO1XPUsDQRCdW4KogbPRIpVEGxGilZ2djSD4A/wV2mkvaGf8AbZi2kDAyiqVVgYLGwkWIqhNEr+wWXmbm2U59vb2chbK+WDITnbezL5hbi8JpJRUZAgqOAQVHVLKRJuYDqXLt5kJxLv8NOTlu6DPKx3ij/e7Ep9s7Ps0wMX3FZ+HzzmSfD5vyZWg1hhQq9Km7vit8quNgW9tzT8Ij9R6qbxCNAIf9TtvV9r3BcQebl/Tbn1Zi2b/46Uf8HclV5L7rzuaHZun6ucCjQolPAIL8QXiwTdz/HQDhY04OTOlugbxi2vDZiEJr3nfhujx6WONeC6ONQtJG2PeR7ytvu9jwLVdTRRx4bD3554ekbPmpUq01VxXa8Dcj3Ffo/2QueCBz1zAHMG4cJi5b6ufxs/SQGEKwLgwIHLjcVV37nTznPb6O1bxjFalXebpQBziwePDIJ/r8GZ9xNnq+/CzNFAkiYEQ8wKDoYBr/G18c/zAz/IWsNX35fs2UNjIQTCMYTI6aF5g2I9bFr4v8vB9GyjiRA5iclb8Jr5XA6XxAwbEi1pHXSL1uRNlTzcP+mLhdVLxv8Rn3cH/v0EqNr4BHwX/OTKRLAIAAAAASUVORK5CYII=',
-  'frog2-270': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAAQCAYAAACm53kpAAABzUlEQVR4nOWXPUvDUBSGz71EIQUblaSCnQRBnZROXbrqUhxEcOg/EHUSVHB0dFHE0d1BB+nk2qWjW39BB00rtEJaUImc255wG/PZDx3yQrm5Sd77nPMmTVpm2zYkWRwSLg4JF4eEi0PCxSHhUoIOpgwNA/qW91lmi+HImBgcxX2byH4/bxB/4gGkDG0OAN4vCwX3fjtqEaM0gBwcJ81XAvyi+f3HMtzuFGF5qvdtscwWFccm1UD/HMElYR3Pe9tivahrROFzP/PpyqqApgxNjKjN+ycxDxP5KUAUBogfKcCwNYQXPVQH8qMoDp97mdGoZwyROBpwRNE8Chw1TIDE9+LSfJx8Jj+ACN54M8UcQ8DU1rcOB0xLJ7vQabQHbkFch+DoQ6EXoXLhVITspxpkfj678IuLeihfwXGl4vksicMnv+JehJqn7XyuBPWXGmQ31pzm0ex+C5AQ7qyRMUA/uh5opH8FFj3NEr9af4Xq3TkUcyWHjXX4NT8sn8npH9hfYnt2WoGLT4CzeQ0+mk24Yb2c6DjO3XeAqqfj+LudRlt13z1x+O4QYvq7ltkSfCcAvyv6F/rPf6ScNlQ9HfijKEyqnnauaIRzZ0ZhjVM/00Y1hr1+fYAAAAAASUVORK5CYII='
+  'frog2-270': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAAQCAYAAACm53kpAAABzUlEQVR4nOWXPUvDUBSGz71EIQUblaSCnQRBnZROXbrqUhxEcOg/EHUSVHB0dFHE0d1BB+nk2qWjW39BB00rtEJaUImc255wG/PZDx3yQrm5Sd77nPMmTVpm2zYkWRwSLg4JF4eEi0PCxSHhUoIOpgwNA/qW91lmi+HImBgcxX2byH4/bxB/4gGkDG0OAN4vCwX3fjtqEaM0gBwcJ81XAvyi+f3HMtzuFGF5qvdtscwWFccm1UD/HMElYR3Pe9tivahrROFzP/PpyqqApgxNjKjN+ycxDxP5KUAUBogfKcCwNYQXPVQH8qMoDp97mdGoZwyROBpwRNE8Chw1TIDE9+LSfJx8Jj+ACN54M8UcQ8DU1rcOB0xLJ7vQabQHbkFch+DoQ6EXoXLhVITspxpkfj678IuLeihfwXGl4vksicMnv+JehJqn7XyuBPWXGmQ31pzm0ex+C5AQ7qyRMUA/uh5opH8FFj3NEr9af4Xq3TkUcyWHjXX4NT8sn8npH9hfYnt2WoGLT4CzeQ0+mk24Yb2c6DjO3XeAqqfj+LudRlt13z1x+O4QYvq7ltkSfCcAvyv6F/rPf6ScNlQ9HfijKEyqnnauaIRzZ0ZhjVM/00Y1hr1+fYAAAAAASUVORK5CYII=',
+  'frog3': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAAQCAYAAACm53kpAAAACXBIWXMAAAsTAAALEwEAmpwYAAABy0lEQVRYheWXvUvDUBTFbx5BTIpQIUFQcCidBNGtXVydqrg5O7hYcJMKzp06V3DyL9BBnBydKi6Cq5PgIK0iSNMuEjmvvfE1JmnSDx1yoLyP5Lzfvfe9Jq3mui6lWYJSLkEpl6CUS1DKJSjl0qMumhkbBfpS55x2U0OrabLxlPRtovrDvFH8qRfAzNjzRPS+Vyv45924QYyTADhop83XI/wy+frBNZVPS5TN974tTrvJwWnTSqB/j+SyEMfJzbZcL+4acfgizLxVyUmombFlC1U3r+R4mNjPBYRQQHyUAg5bQ3rh4TjAj6MkfBFkhtGybFlxGNBCPI4Dh0YpIPODuDyeJF9TH0AMb7V6SaIIqNr+2s6AaSVXoY7TGjiCWIfh8EHwAqoGzkGofo5B5eeLC7+4UO3iks6P7gKfJUn47Nf9i3Dy3N8tFuj55YGWl9a95GH2vwVYgP+sYdOtdTiQSH8HFgPNCv+p8UqVxhmVSwWPjTjCkh+Vr6nVXy07sj+b1em+OkMbxwZ9fL7RY92U83wdY/8JMEwrib/bcVqG//Qk4fuLkNDfddpNyfcKELajf6H//EcquGOYVuSPomEyTMvb0Rj3zo3DmqS+Aaa7NqYBW1vuAAAAAElFTkSuQmCC'
 };
 
 // ── SpriteRenderer ─────────────────────────────────────────
 // CSS background-image + RAF. No canvas. No image load events.
 // Sheet 64x16 displayed at 128x32 (2x). backgroundPosition shifts per frame.
 
-const ANIMALS = ['cat2', 'snake', 'penguin', 'octopus-pink', 'crab', 'rat', 'seal', 'rabbit', 'cat', 'octopus', 'octopus-yellow', 'octopus-green', 'cat-120', 'rabbit-120', 'penguin-120', 'crab-120', 'rat-120', 'seal-120', 'snake-120', 'cat2-120', 'cat-195', 'rabbit-195', 'penguin-195', 'crab-195', 'rat-195', 'seal-195', 'snake-195', 'cat2-195', 'cat-270', 'rabbit-270', 'penguin-270', 'crab-270', 'rat-270', 'seal-270', 'snake-270', 'cat2-270'];
-const IDENTITY_SEQ_KEY = 'pixel-terminal-identity-seq-v8';
+const ANIMALS = ['cat2', 'snake', 'penguin', 'octopus-pink', 'crab', 'rat', 'seal', 'rabbit', 'cat', 'frog3', 'octopus', 'octopus-yellow', 'octopus-green', 'cat-120', 'rabbit-120', 'penguin-120', 'crab-120', 'rat-120', 'seal-120', 'snake-120', 'cat2-120', 'cat-195', 'rabbit-195', 'penguin-195', 'crab-195', 'rat-195', 'seal-195', 'snake-195', 'cat2-195', 'cat-270', 'rabbit-270', 'penguin-270', 'crab-270', 'rat-270', 'seal-270', 'snake-270', 'cat2-270'];
+const IDENTITY_SEQ_KEY = 'pixel-terminal-identity-seq-v9';
 // First BASE_ANIMAL_COUNT entries in ANIMALS are 0-degree originals; rest are hue-rotated.
-const BASE_ANIMAL_COUNT = 12;
+// Only octopus-pink represents octopus in the base set — octopus/yellow/green cycle in the hue batch.
+const BASE_ANIMAL_COUNT = 10;
 
 function _shuffle(arr) {
   const a = [...arr];
@@ -79,6 +81,47 @@ function getNextIdentity() {
   return { animalIndex };
 }
 
+// Per-sprite X offset (3x px) to horizontally center each character within the 48px frame.
+// Derived from: round(24 - vis_center_px) where vis_center_px = (left_col + right_col) / 2 × 3.
+// Positive X shifts the background right, moving the character toward horizontal center.
+// Hue variants share geometry with their base animal.
+const SPRITE_X_OFFSETS = {
+  // 0px — rat is already centered (vis_center = 8.0)
+  'rat':0,'rat-120':0,'rat-195':0,'rat-270':0,
+  // 2px — cat, cat2, snake, penguin, crab, frog3 (vis_center ≈ 7.5)
+  'cat':2,'cat2':2,'snake':2,'penguin':2,'crab':2,'frog3':2,
+  'cat-120':2,'cat2-120':2,'snake-120':2,'penguin-120':2,'crab-120':2,
+  'cat-195':2,'cat2-195':2,'snake-195':2,'penguin-195':2,'crab-195':2,
+  'cat-270':2,'cat2-270':2,'snake-270':2,'penguin-270':2,'crab-270':2,
+  // 3px — rabbit, seal (vis_center = 7.0)
+  'rabbit':3,'seal':3,
+  'rabbit-120':3,'seal-120':3,
+  'rabbit-195':3,'seal-195':3,
+  'rabbit-270':3,'seal-270':3,
+  // 5px — all octopi (vis_center = 6.5)
+  'octopus':5,'octopus-pink':5,'octopus-green':5,'octopus-yellow':5,
+};
+
+// Per-sprite Y offset (3x px) to bottom-align all characters on the same baseline.
+// Derived from: (13 - sprite_bot_row) × 3  where 13 is the deepest bottom row across all sprites.
+// Positive Y shifts the background image down, moving the character lower in the container.
+const SPRITE_Y_OFFSETS = {
+  // bot=13 → 0px (reference baseline)
+  'cat':0,'cat2':0,'snake':0,'frog3':0,
+  'octopus':0,'octopus-pink':0,'octopus-green':0,'octopus-yellow':0,
+  'cat-120':0,'cat2-120':0,'snake-120':0,
+  'cat-195':0,'cat2-195':0,'snake-195':0,
+  'cat-270':0,'cat2-270':0,'snake-270':0,
+  'penguin-270':0,
+  // bot=12 → 3px
+  'rabbit':3,'penguin':3,'rat':3,'seal':3,
+  'rabbit-120':3,'penguin-120':3,'rat-120':3,'seal-120':3,
+  'rabbit-195':3,'penguin-195':3,'rat-195':3,'seal-195':3,
+  'rabbit-270':3,'rat-270':3,'seal-270':3,
+  // bot=11 → 6px
+  'crab':6,'crab-120':6,'crab-195':6,'crab-270':6,
+};
+
 class SpriteRenderer {
   constructor(el, charIndex) {
     this.el = el;
@@ -90,6 +133,8 @@ class SpriteRenderer {
 
     const animal = ANIMALS[charIndex % ANIMALS.length];
     const data = SPRITE_DATA[animal];
+    this._xOffset = SPRITE_X_OFFSETS[animal] ?? 0;
+    this._yPx = (SPRITE_Y_OFFSETS[animal] ?? 0) + 'px';
 
     el.style.width = '48px';
     el.style.height = '48px';
@@ -97,7 +142,7 @@ class SpriteRenderer {
     el.style.backgroundImage = "url('" + data + "')";
     el.style.backgroundSize = '192px 48px';
     el.style.backgroundRepeat = 'no-repeat';
-    el.style.backgroundPosition = '0 0';
+    el.style.backgroundPosition = this._xOffset + 'px ' + this._yPx;
     el.style.imageRendering = 'pixelated';
     // No hue filter — sprites use their original pixel-art palette
     // Loop starts only when setStatus transitions to an active state
@@ -109,7 +154,7 @@ class SpriteRenderer {
     this._status = status;
     this._frameIdx = 0;
     this._lastTs = 0; // reset so first frame of new state doesn't skip delay
-    this.el.style.backgroundPosition = '0 0'; // snap to frame 0 immediately
+    this.el.style.backgroundPosition = this._xOffset + 'px ' + this._yPx; // snap to frame 0 immediately
     this._FPS = 3;
     // Animate only during active work — waiting/idle/error hold frame 0
     const isInactive = status === 'idle' || status === 'error' || status === 'waiting';
@@ -126,7 +171,7 @@ class SpriteRenderer {
       this._raf = requestAnimationFrame(loop);
       if (ts - this._lastTs >= 1000 / this._FPS) {
         this._frameIdx = (this._frameIdx + 1) % 4;
-        this.el.style.backgroundPosition = (-this._frameIdx * 48) + 'px 0';
+        this.el.style.backgroundPosition = ((-this._frameIdx * 48) + this._xOffset) + 'px ' + this._yPx;
         this._lastTs = ts;
       }
     };

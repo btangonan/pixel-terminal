@@ -85,13 +85,15 @@ export function setActiveSession(id) {
   renderMessageLog(id);
   const s = sessions.get(id);
   if (s) updateWorkingCursor(s.status);
+  document.body.classList.remove('no-session-active');
   $.inputField?.focus();
   syncOmiSessions();
   document.dispatchEvent(new CustomEvent('pixel:session-changed', { detail: { id } }));
 }
 
 export function showEmptyState() {
-  $.messageLog.innerHTML = '';
+  $.messageLog.querySelectorAll('.msg, .working-cursor, .msg-new').forEach(el => el.remove());
+  document.body.classList.add('no-session-active');
 }
 
 export function showChatView() {

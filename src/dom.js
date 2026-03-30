@@ -29,6 +29,7 @@ export function initDOM() {
   $.sidebar = document.getElementById('sidebar');
   $.sidebarResize = document.getElementById('sidebar-resize');
   $.sidebarHResize = document.getElementById('sidebar-h-resize');
+  $.attHResize = document.getElementById('att-h-resize');
   $.btnClearVoiceLog = document.getElementById('btn-clear-voice-log');
   $.voiceSourceBle = document.getElementById('voice-source-ble');
   $.voiceSourceMic = document.getElementById('voice-source-mic');

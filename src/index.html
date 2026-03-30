@@ -60,6 +60,7 @@
         <button id="btn-clear-voice-log" title="Clear voice log">CLR</button>
       </div>
       <div id="voice-log"></div>
+      <div id="att-h-resize"></div>
       <div id="attachments-header">
         <span class="pixel-label">ATTACHMENTS</span>
         <button id="btn-clear-attachments" title="Clear sent attachments">CLR</button>
@@ -86,7 +87,9 @@
           <button id="history-find-close" title="Close (Esc)">✕</button>
         </div>
 
-        <div id="message-log"></div>
+        <div id="message-log">
+          <div id="empty-state">no session — press ＋ to open a folder</div>
+        </div>
 
         <div id="drop-indicator" class="hidden">drop files to attach</div>
         <div id="slash-menu" class="hidden"></div>
