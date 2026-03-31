@@ -5,6 +5,15 @@ import { $, esc, autoResize } from './dom.js';
 const { invoke } = window.__TAURI__.core;
 
 let _slashCommands = [];    // loaded once on startup
+
+const BUILTIN_SLASH_COMMANDS = [
+  { name: 'clear', description: 'Clear conversation and restart session' },
+  { name: 'cost', description: 'Show token usage for this session' },
+  { name: 'compact', description: 'Summarize conversation to save context' },
+  { name: 'help', description: 'List all available commands' },
+  { name: 'model', description: 'Switch Claude model (restarts session)' },
+  { name: 'effort', description: 'Set reasoning effort level' },
+];
 let _slashActiveIdx = -1;   // keyboard-highlighted row
 let _activeToken   = null;  // token that opened the menu
 
@@ -32,7 +41,8 @@ export async function loadSlashCommands() {
   }
 }
 
-export function getSlashCommands() { return _slashCommands; }
+export function getSlashCommands() { return [...BUILTIN_SLASH_COMMANDS, ..._slashCommands]; }
+export function isBuiltinCommand(name) { return BUILTIN_SLASH_COMMANDS.some(c => c.name === name); }
 
 export function showSlashMenu(token) {
   _activeToken = token;

@@ -7,6 +7,7 @@ import {
   syncOmiSessions, IDENTITY_SEQ_KEY
 } from './session.js';
 import { getStagedAttachments, markAttachmentsSent } from './attachments.js';
+import { getSlashCommands, isBuiltinCommand } from './slash-menu.js';
 
 const { Command } = window.__TAURI__.shell;
 const { open: openDialog } = window.__TAURI__.dialog;
@@ -81,6 +82,8 @@ async function spawnClaude(id) {
       '--permission-mode', 'bypassPermissions',
     ];
     if (s.readOnly) claudeArgs.push('--disallowed-tools', 'Edit,Write,MultiEdit,NotebookEdit,Bash');
+    if (s._modelOverride) claudeArgs.push('--model', s._modelOverride);
+    if (s._effortOverride) claudeArgs.push('--effort', s._effortOverride);
     const cmd = Command.create('claude', claudeArgs, { cwd: s.cwd });
 
     let _buf = '';
@@ -147,10 +150,10 @@ function killSession(id) {
 
 
 function warnIfUnknownCommand(id, text) {
-  if (!_deps.slashCommands.length) return false;
   const m = text.match(/^\/([^\s\/]+)/);
   if (!m) return false;
   const name = m[1];
+  if (isBuiltinCommand(name)) return false;
   if (_deps.slashCommands.find(c => c.name === name)) return false;
   _deps.pushMessage(id, { type: 'warn', text: `Unknown command: /${name}` });
   return true;
@@ -171,11 +174,84 @@ async function expandSlashCommand(text) {
 }
 
 
+// ── Built-in commands (handled locally, never sent to Claude) ──
+const BUILTIN_COMMANDS = {
+  clear: async (id) => {
+    const s = sessions.get(id);
+    if (!s) return;
+    const log = document.getElementById('message-log');
+    if (log) log.querySelectorAll('.msg').forEach(m => m.remove());
+    const sl = sessionLogs.get(id);
+    if (sl) sl.messages = [];
+    if (s.child) { try { s.child.kill(); } catch (_) {} s.child = null; }
+    spawnClaude(id);
+    _deps.pushMessage(id, { type: 'system-msg', text: 'Session cleared.' });
+  },
+
+  cost: async (id) => {
+    const s = sessions.get(id);
+    if (!s) return;
+    _deps.pushMessage(id, { type: 'system-msg',
+      text: `Tokens: ${(s.tokens || 0).toLocaleString()} in / ${(s._liveTokens || 0).toLocaleString()} out` });
+  },
+
+  help: async (id) => {
+    const cmds = getSlashCommands().map(c => `/${c.name} — ${c.description}`);
+    _deps.pushMessage(id, { type: 'system-msg', text: `Available commands:\n${cmds.join('\n')}` });
+  },
+
+  compact: async (id) => {
+    _deps.pushMessage(id, { type: 'system-msg', text: 'Compacting — asking Claude to summarize…' });
+    sendMessageDirect(id, 'Summarize our conversation so far in 3-5 bullet points. Be specific about files changed, decisions made, and current state. Output ONLY the summary, no preamble.');
+  },
+
+  model: async (id, args) => {
+    const s = sessions.get(id);
+    if (!s || !args) {
+      _deps.pushMessage(id, { type: 'system-msg', text: 'Usage: /model <name> (e.g., sonnet, opus, haiku)' });
+      return;
+    }
+    s._modelOverride = args.trim();
+    if (s.child) { try { s.child.kill(); } catch (_) {} s.child = null; }
+    spawnClaude(id);
+    _deps.pushMessage(id, { type: 'system-msg', text: `Switched to ${args.trim()}. Session restarted.` });
+  },
+
+  effort: async (id, args) => {
+    const s = sessions.get(id);
+    if (!s || !args) {
+      _deps.pushMessage(id, { type: 'system-msg', text: 'Usage: /effort <low|medium|high|max>' });
+      return;
+    }
+    s._effortOverride = args.trim();
+    if (s.child) { try { s.child.kill(); } catch (_) {} s.child = null; }
+    spawnClaude(id);
+    _deps.pushMessage(id, { type: 'system-msg', text: `Effort set to ${args.trim()}. Session restarted.` });
+  },
+};
+
+// Send a message directly to Claude without slash expansion or builtin check (used by /compact)
+async function sendMessageDirect(id, text) {
+  const s = sessions.get(id);
+  if (!s?.child) return;
+  _deps.setStatus(id, 'working');
+  const line = JSON.stringify({ type: 'user', message: { role: 'user', content: text } }) + '\n';
+  try { await s.child.write(line); } catch (_) { _deps.setStatus(id, 'idle'); }
+}
+
 async function sendMessage(id, text) {
   const s = sessions.get(id);
   if (!s || !text.trim()) return;
 
   const raw = text.trim();
+
+  // Check built-in commands first
+  const builtinMatch = raw.match(/^\/(\w[\w-]*)(?:\s+([\s\S]*))?$/);
+  if (builtinMatch && BUILTIN_COMMANDS[builtinMatch[1]]) {
+    _deps.pushMessage(id, { type: 'user', text: raw });
+    await BUILTIN_COMMANDS[builtinMatch[1]](id, builtinMatch[2]);
+    return;
+  }
 
   if (warnIfUnknownCommand(id, raw)) return;
 

@@ -133,7 +133,7 @@ body {
 }
 #sidebar-header .pixel-label { color: var(--accent); }
 #app-title-img {
-  height: 14px;
+  height: 15px;
   width: auto;
   image-rendering: pixelated;
   pointer-events: none;
