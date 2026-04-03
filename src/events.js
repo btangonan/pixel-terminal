@@ -5,7 +5,14 @@ import { sessions, sessionLogs, getActiveSessionId } from './session.js';
 import { pushMessage, updateWorkingCursor, updateCursorPhase, scheduleScroll } from './messages.js';
 import { updateSessionCard } from './cards.js';
 import { pxLog } from './logger.js';
-import { addToVexilLog } from './companion.js';
+import { addToVexilLog, getBuddyTrigger } from './companion.js';
+
+// ── Vexil Master feed (proactive cross-session commentary) ──────────────
+const VEXIL_FEED_PATH = '/tmp/vexil_feed.jsonl';
+function appendVexilFeed(entry) {
+  const line = JSON.stringify({ ...entry, ts: Date.now() });
+  window.__TAURI__?.core?.invoke('append_line_to_file', { path: VEXIL_FEED_PATH, line }).catch(() => {});
+}
 
 // Tools that are Claude Code internal scaffolding — never show in UI
 const INTERNAL_TOOLS = new Set([
@@ -64,6 +71,8 @@ export function handleEvent(id, event) {
         const shortName = blk.name.replace(/^mcp__\w+__/, '').replace(/_/g, ' ');
         s._workingPhase = shortName;
         updateCursorPhase(shortName);
+        // tool_use fed to Vexil Master in the 'assistant' event backfill — where
+        // toolHint() has the full input. Content is useless without context.
       }
       break;
     }
@@ -175,8 +184,19 @@ export function handleEvent(id, event) {
             ? JSON.stringify(b.input, null, 2)
             : String(b.input || '');
           if (!isInternalTool(b.name)) {
+            // Compute hint + file path for ALL non-internal tools — feed needs this for proactive commentary
+            const hint = toolHint(b.name, input);
+            let filePath = null;
+            try { const inp = JSON.parse(input); filePath = inp.file_path || inp.path || null; } catch (_) {}
+            if (hint) {
+              pxLog('TOOL-IN', `id:${id.slice(0,8)} ${b.name} → ${hint.slice(0,80)}`);
+              s._workingPhase = hint; updateCursorPhase(hint);
+            }
+            // Always feed tool_use with context — daemon needs this for pattern detection
+            appendVexilFeed({ type: 'tool_use', session_id: id.slice(0, 8), tool: b.name, hint: (hint || '').slice(0, 120), file: filePath, cwd: s.cwd });
+
             if (s._streamedToolIds?.has(b.id)) {
-              // Already shown — backfill the real input and re-render hint
+              // Already shown — backfill real input and re-render hint in DOM
               const data = sessionLogs.get(id);
               const toolMsg = data
                 ? data.messages.findLast(m => m.type === 'tool' && m.toolId === b.id)
@@ -184,12 +204,6 @@ export function handleEvent(id, event) {
               if (toolMsg) {
                 toolMsg.input = input;
                 toolMsg._hint = undefined; // force recompute
-                // Update cursor phase with detailed tool hint
-                const hint = toolHint(b.name, input);
-                if (hint) {
-                  pxLog('TOOL-IN', `id:${id.slice(0,8)} ${b.name} → ${hint.slice(0,80)}`);
-                  s._workingPhase = hint; updateCursorPhase(hint);
-                }
                 if (getActiveSessionId() === id) {
                   const toolEl = $.messageLog?.querySelector(`[data-tool-id="${b.id}"]`);
                   if (toolEl) {
@@ -209,6 +223,11 @@ export function handleEvent(id, event) {
             }
           }
           s.toolPending[b.id] = true;
+          s.lastActivityAt = Date.now();
+          s._turnToolCount = (s._turnToolCount || 0) + 1;
+          // Count every tool call for activity tick — including MCP/internal.
+          // type:'tool_any' is counter-only; daemon doesn't pattern-match on it.
+          appendVexilFeed({ type: 'tool_any', session_id: id.slice(0, 8) });
         }
       }
       s._streamedToolIds = null;
@@ -243,7 +262,15 @@ export function handleEvent(id, event) {
           const preview = resultText.replace(/\n/g, ' ').slice(0, 100);
           const toolName = toolMsg?.toolName || b.tool_use_id?.slice(0,8);
           pxLog('RESULT', `id:${id.slice(0,8)} ${toolName} → "${preview}${resultText.length > 100 ? '…' : ''}"`);
+          if (b.is_error) {
+            appendVexilFeed({ type: 'tool_error', session_id: id.slice(0, 8), tool: toolName, error: preview });
+          }
           delete s.toolPending[b.tool_use_id];
+          // Flush pre-tool text from vexil turns — only post-tool text is companion voice.
+          // "vexil explain X" → Claude reads file (tool_result fires here) → reply is voice.
+          // "vexil run /dream" → dream completes (tool_result) → "DREAM COMPLETE" text → NOT voice.
+          // Resetting here means only the synthesis *after* tool completion survives into BUDDY routing.
+          if (s._vexilTurn) s._turnText = '';
         }
       }
       break;
@@ -258,6 +285,11 @@ export function handleEvent(id, event) {
 
       // Accumulate output tokens for perf (multiple result events per user turn)
       if (u?.output_tokens) s._perfOutTokens = (s._perfOutTokens || 0) + u.output_tokens;
+      // Feed token bloat signal to Vexil Master
+      const _turnTok = u ? (u.input_tokens || 0) + (u.output_tokens || 0) : s._liveTokens;
+      if (_turnTok > 80000) {
+        appendVexilFeed({ type: 'token_bloat', session_id: id.slice(0, 8), tokens: _turnTok });
+      }
       if (event.subtype === 'rate_limit') s._hitRateLimit = true;
 
       s._liveTokens = 0;
@@ -286,7 +318,7 @@ export function handleEvent(id, event) {
           // Guard: verify _lastUserMsg actually started with 'vexil ' — prevents
           // state leaks where _vexilTurn is true but the triggering message wasn't vexil.
           const confirmedVexil = s._vexilTurn
-            && (s._lastUserMsg || '').toLowerCase().startsWith('vexil ');
+            && (s._lastUserMsg || '').toLowerCase().startsWith(getBuddyTrigger());
           pxLog('VEXIL', `id:${id.slice(0,8)} turn:${s._vexilTurn} confirmed:${confirmedVexil} lastMsg:"${(s._lastUserMsg||'').slice(0,40)}" textLen:${s._turnText?.length ?? 0}`);
           if (confirmedVexil && s._turnText) {
             addToVexilLog('vexil', s._turnText.replace(/\n/g, ' ').slice(0, 240));
@@ -296,9 +328,14 @@ export function handleEvent(id, event) {
           s._hitRateLimit = false;
           s._perfOutTokens = 0;
         }
+        // Emit turn_complete so daemon can fire per-turn commentary (native buddy cadence)
+        if (s._turnToolCount > 0) {
+          appendVexilFeed({ type: 'turn_complete', session_id: id.slice(0, 8), tool_count: s._turnToolCount });
+        }
         // Always reset vexil state — must not bleed into next turn
         s._turnText = '';
         s._vexilTurn = false;
+        s._turnToolCount = 0;
         setStatus(id, 'idle');
         if (getActiveSessionId() !== id) {
           s.unread = true;
@@ -324,8 +361,8 @@ export function handleEvent(id, event) {
           (async () => {
             for (const msg of queue) {
               if (warnIfUnknownCommand(id, msg)) continue;
-              const isVexil = msg.toLowerCase().startsWith('vexil ');
-              if (!isVexil) pushMessage(id, { type: 'user', text: msg });
+              const isVexil = msg.toLowerCase().startsWith(getBuddyTrigger());
+              pushMessage(id, { type: 'user', text: msg }); // always show user message in session log
               try {
                 const expanded = await expandSlashCommand(msg);
                 if (!s.child) break;
@@ -349,6 +386,7 @@ export function handleEvent(id, event) {
     case 'rate_limit_event':
       s._hitRateLimit = true;
       pxLog('RATE-LIMIT', `id:${id.slice(0,8)} — CLI retrying automatically`);
+      appendVexilFeed({ type: 'rate_limit', session_id: id.slice(0, 8) });
       break;
 
     default:

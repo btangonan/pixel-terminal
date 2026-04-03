@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "dev": "python3 scripts/vexil_master.py & npm run tauri -- dev"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

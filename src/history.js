@@ -127,6 +127,11 @@ export function showHistoryTab() {
 // Sprite renderer for the live session pin (destroyed on exit)
 let _livePinRenderer = null;
 
+function _teardownLivePin() {
+  _livePinRenderer?.destroy();
+  _livePinRenderer = null;
+}
+
 /** Render the active live session's card at the top of #history-current. */
 function showLiveSessionPin() {
   if (!$.historyCurrent) return;
@@ -139,8 +144,7 @@ function showLiveSessionPin() {
   }
 
   // Clean up previous sprite renderer
-  _livePinRenderer?.destroy();
-  _livePinRenderer = null;
+  _teardownLivePin();
 
   $.historyCurrent.innerHTML = '';
 
@@ -195,8 +199,7 @@ export function showLiveTab() {
   if ($.btnSend) $.btnSend.disabled = false;
 
   // Clean up live pin sprite renderer
-  _livePinRenderer?.destroy();
-  _livePinRenderer = null;
+  _teardownLivePin();
 }
 
 /** Called when user clicks a live session card — fully exits history mode. */
@@ -222,8 +225,7 @@ export function exitHistoryView() {
     $.historyCurrent.innerHTML = '';
     $.historyCurrent.classList.add('hidden');
   }
-  _livePinRenderer?.destroy();
-  _livePinRenderer = null;
+  _teardownLivePin();
 
   document.querySelectorAll('.session-tab').forEach(b => {
     b.classList.toggle('active', b.dataset.tab === 'live');

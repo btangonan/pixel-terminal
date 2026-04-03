@@ -1,10 +1,30 @@
 # STATE.md — Working State (re-read after compaction)
-## Updated: 2026-04-01 01:05
+## Updated: 2026-04-03
 
 ### Active Work
-- CSS spacing iteration — message spacing looks worse after 16px user margin-top
-- white-space pre-wrap fix applied (trailing newline gap eliminated)
-- Now: revert/tune spacing with Gemini Vision feedback + --seq
+- pixel-terminal companion system session — large batch of fixes and features shipped
+- Reload pixel-terminal to test: session scheduler, stale badge, file-context commentary, buddy log color, FILES tab hidden fix
+
+### Session Shipped (2026-04-03)
+- **_teardownLivePin()** — consolidated 3 scattered destroy+null pairs in history.js
+- **Session scheduler** — lastActivityAt on sessions, getStaleSessionIds(), creation gate at 5+ sessions, ⊖ stale badge on cards, 60s refresh tick
+- **Buddy log color** — pollMasterOut uses 'vexil' state → .vexil-entry--buddy → companion hue color
+- **Hook gate removed from log** — approval requests bubble-only, no red log entry
+- **FILES tab fix** — #attachments-panel.hidden { display: none } was missing; showTab('vexil') on init
+- **Drop files orphan removed** — static .att-empty div gone from index.html
+- **reportingMode filter** — vexil_master.py suppresses internal refs in user mode; buddy.json has reportingMode:dev
+- **Plan A built** — events.js passes file+cwd in tool_use feed; vexil_master.py reads file excerpts at trigger time; all tuple unpacks use *_ splat
+- **Rate limit prompt grounded** — passes actual tool context, banned speculation about causes
+
+### Key IDs
+- Collection: pixel_terminal (gemini-memory)
+- buddy.json: ~/.config/pixel-terminal/buddy.json (reportingMode: dev, syncedFrom: claude-code)
+- Handoff doc: ~/Projects/command-center/research/buddy-system-port-handoff.md
+
+### Next
+- Reload and verify: stale badge, file-context commentary quality, FILES tab hidden, buddy log color
+- Plan B (buddy port): ASCII sprites, face render, companion intro dedup — defer until A verified
+- Future Plan C: per-turn conversation context in feed (full Vexil-quality ceiling)
 
 ### Key IDs
 - Collection: pixel_terminal (gemini-memory)

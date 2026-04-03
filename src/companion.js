@@ -21,6 +21,8 @@ const { invoke } = window.__TAURI__.core;
 const BUDDY_PATH   = `${window.__TAURI_INTERNALS__?.metadata?.homeDir ?? '/Users/' + 'bradleytangonan'}/.config/pixel-terminal/buddy.json`;
 const LINT_PATH    = '/tmp/vexil_lint.json';
 const APPROVAL_PATH = '/tmp/vexil_approval.json';
+const HOOK_GATE_PATH      = '/tmp/pixel_hook_gate.json';
+const HOOK_GATE_RESP_PATH = '/tmp/pixel_hook_gate_response.json';
 
 const POLL_INTERVAL = 3000;   // ms
 const BUBBLE_AUTODISMISS = 6000;  // ms for non-interactive bubbles
@@ -87,8 +89,11 @@ let _vexilLogListener = null;       // registered by voice.js to re-render the V
 let _lastLintSeen = '';       // prevent re-showing same lint event
 let _lastOpsKey   = '';       // prevent re-showing same ops report
 let _approvalPending = false;
+let _hookGatePending = false;
+let _hookGateReqId   = null;
 let _dismissTimer = null;
 let _pollActive = false;
+let _masterOutOffset = 0;  // line count consumed from vexil_master_out.jsonl
 
 // 3-tier priority queue
 // Priority: BLOCK=3 (preempts everything), OPS=2 (preempts warn/ask), WARN/ASK=1
@@ -168,6 +173,9 @@ function renderCompanionSprite() {
   const data = SPRITE_DATA[spriteKey];
   if (!data) return;
 
+  // Clear any previously rendered canvas before appending a new one
+  spriteWrap.innerHTML = '';
+
   // Simple canvas-based render: idle frame only (frame 0)
   const canvas = document.createElement('canvas');
   canvas.width = 48;
@@ -216,6 +224,10 @@ function showBubble({ msg, type, interactive }) {
   bubble.classList.remove('hidden');
   _currentPriority = PRIORITY[type] ?? 1;
 
+  // Push log content up so bubble doesn't overlap last lines
+  const log = document.getElementById('message-log');
+  if (log) { log.classList.add('companion-active'); log.scrollTop = log.scrollHeight; }
+
   if (!interactive) {
     _dismissTimer = setTimeout(() => hideBubble(), BUBBLE_AUTODISMISS);
   }
@@ -231,6 +243,9 @@ function hideBubble() {
   if (_messageQueue.length > 0) {
     const next = _messageQueue.shift();
     showBubble(next);
+  } else {
+    // No more queued messages — release the bottom clearance
+    document.getElementById('message-log')?.classList.remove('companion-active');
   }
 }
 
@@ -251,22 +266,59 @@ function enqueueBubble({ msg, type, interactive }) {
 // ── Approval IPC ──────────────────────────────────────────────────────────────
 
 async function writeApproval(approved) {
-  _approvalPending = false;
   try {
-    // Write via Tauri shell command (no write_file command in lib.rs — use shell)
-    const { Command } = window.__TAURI__.shell;
-    const payload = JSON.stringify({ approved });
-    await new Command('sh', ['-c', `echo '${payload}' > ${APPROVAL_PATH}`]).execute();
+    if (_hookGatePending) {
+      // Route to hook gate response file (pixel_gate.py is polling this)
+      const payload = JSON.stringify({ id: _hookGateReqId, approved });
+      await invoke('write_file_as_text', { path: HOOK_GATE_RESP_PATH, content: payload });
+      _hookGatePending = false;
+      _hookGateReqId   = null;
+    } else {
+      // Route to Vexil approval file (memory_lint.py is polling this)
+      const payload = JSON.stringify({ approved });
+      await invoke('write_file_as_text', { path: APPROVAL_PATH, content: payload });
+      _approvalPending = false;
+    }
   } catch (e) {
     console.error('[companion] failed to write approval:', e);
+    // Leave pending flag set so user can retry
   }
   hideBubble();
+}
+
+// ── Hook gate poller ──────────────────────────────────────────────────────────
+// Checks /tmp/pixel_hook_gate.json — written by pixel_gate.py when a tool call
+// needs user approval. Higher urgency than Vexil lint (a hook is blocking).
+
+async function pollHookGate() {
+  if (_hookGatePending) return;  // already showing gate bubble — wait for user
+  let raw;
+  try {
+    raw = await invoke('read_file_as_text', { path: HOOK_GATE_PATH });
+  } catch {
+    return;  // file missing = no gate pending
+  }
+  let gate;
+  try {
+    gate = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (!gate?.id || !gate?.msg) return;
+  if (Date.now() / 1000 > gate.expires) return;  // stale request
+
+  _hookGatePending = true;
+  _hookGateReqId   = gate.id;
+  invoke('js_log', { msg: `[hook-gate] ${gate.msg?.slice(0, 80)}` }).catch(() => {});
+  enqueueBubble({ msg: gate.msg, type: 'ask', interactive: true });
+  // Gate messages are interactive (bubble handles approve/deny) — not logged to BUDDY tab
+  // since the log entry has no action buttons and would show confusingly in red.
 }
 
 // ── Lint file poller ──────────────────────────────────────────────────────────
 
 async function pollLintFile() {
-  if (_approvalPending) return;  // don't poll while waiting for user response
+  if (_approvalPending || _hookGatePending) return;  // don't poll while waiting for user response
 
   let raw;
   try {
@@ -431,7 +483,7 @@ const LINT_LOG = [];  // max 100 entries, newest first
 
 function addToLintLog(state, msg) {
   const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  LINT_LOG.push({ ts, state, msg: msg?.slice(0, 120) ?? '' });
+  LINT_LOG.push({ ts, state, msg: msg ?? '' });
   if (LINT_LOG.length > 100) LINT_LOG.shift(); // drop oldest when capped
   if (_vexilLogListener) _vexilLogListener(LINT_LOG);
 }
@@ -443,6 +495,28 @@ export function addToVexilLog(state, msg) {
   enqueueBubble({ msg, type: 'vexil', interactive: false });
 }
 
+// ── Vexil Master output poll ──────────────────────────────────────────────────
+
+async function pollMasterOut() {
+  try {
+    const raw = await invoke('read_file_as_text', { path: '/tmp/vexil_master_out.jsonl' });
+    const lines = raw.split('\n').filter(Boolean);
+    if (lines.length <= _masterOutOffset) return;
+    const newLines = lines.slice(_masterOutOffset);
+    _masterOutOffset = lines.length;
+    for (const line of newLines) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry.msg) {
+          addToLintLog('vexil', entry.msg);
+          invoke('js_log', { msg: `[vexil-master] "${entry.msg?.slice(0,80)}"` }).catch(() => {});
+          enqueueBubble({ msg: entry.msg, type: 'vexil', interactive: false });
+        }
+      } catch { /* malformed line */ }
+    }
+  } catch { /* file not yet created */ }
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 export async function initCompanion() {
@@ -450,10 +524,35 @@ export async function initCompanion() {
   _companionInitialized = true;
   await loadBuddy();
 
+  // Tab is always "BUDDY" — companion name lives in the bio panel, not the tab
+  const vexilTabBtn = document.querySelector('.voice-tab[data-vtab="vexil"]');
+  if (vexilTabBtn) vexilTabBtn.textContent = 'BUDDY';
+
+  // Populate bio panel with real buddy identity
+  // Species: prefer term extracted from personality text (soul > bones for display)
+  const bio = document.getElementById('vexil-bio');
+  if (bio && buddy) {
+    const KNOWN_SPECIES = ['dragon','cat','rabbit','penguin','frog','octopus','duck',
+      'goose','blob','turtle','snail','ghost','axolotl','capybara','cactus','robot',
+      'mushroom','chonk','owl','parrot','panda','fox','koala','platypus','narwhal',
+      'sloth','hedgehog','hamster'];
+    const personalityLower = (buddy.personality ?? '').toLowerCase();
+    const displaySpecies = KNOWN_SPECIES.find(s => personalityLower.includes(s)) ?? buddy.species;
+    const rarityStr = buddy.rarity ? `${buddy.rarity} ` : '';
+    bio.querySelector('.vexil-bio-name').textContent =
+      `${buddy.name} · ${rarityStr}${displaySpecies}`.trim();
+    bio.querySelector('.vexil-bio-personality').textContent = buddy.personality ?? '';
+    bio.classList.remove('hidden'); // bio always visible at panel bottom — not tab-toggled
+  }
+
   // Sync buddy species with Claude Code companion — buddy.json is sole owner of this write
+  // Skip if sync_real_buddy.ts already ran at launch (wyhash is authoritative over FNV-1a)
   try {
-    const derivedSpecies = await deriveBuddySpecies();
-    if (buddy.species !== derivedSpecies || buddy.companionSeed !== COMPANION_SEED) {
+    if (buddy.syncedFrom === 'claude-code') {
+      // Real sync already wrote correct species — FNV-1a would produce wrong result
+    } else {
+      const derivedSpecies = await deriveBuddySpecies();
+      if (buddy.species !== derivedSpecies || buddy.companionSeed !== COMPANION_SEED) {
       const oldSpecies = buddy.species;
       buddy.species      = derivedSpecies;
       buddy.companionSeed = COMPANION_SEED;
@@ -485,7 +584,8 @@ export async function initCompanion() {
           }
         } catch { /* project-chars.json may not exist yet — fine */ }
       }
-    }
+      } // end if species mismatch
+    } // end else (not syncedFrom claude-code)
   } catch (e) {
     // Species sync failed — non-fatal, polling still starts
     console.warn('[companion] species sync skipped:', e?.message ?? e);
@@ -520,9 +620,24 @@ export async function initCompanion() {
     _lastLintSeen = raw.trim();
   } catch { /* file doesn't exist yet — fine */ }
 
-  // Start polling — unified interval reads both files
-  setInterval(pollLintFile, POLL_INTERVAL);
+  // Seed master output offset — don't re-show old entries from previous launch
+  try {
+    const raw = await invoke('read_file_as_text', { path: '/tmp/vexil_master_out.jsonl' });
+    _masterOutOffset = raw.split('\n').filter(Boolean).length;
+  } catch { /* file doesn't exist yet — fine */ }
+
+  // Start polling — hook gate checked first (higher urgency: a hook is blocking)
+  setInterval(async () => {
+    await pollHookGate();
+    await pollLintFile();
+  }, POLL_INTERVAL);
   setInterval(pollOpsReport, 5000);   // ops report slower — less frequent events
+  setInterval(pollMasterOut, 5000);   // master proactive commentary
+}
+
+// Returns the lowercase trigger prefix for addressing the companion (e.g. "vexil ")
+export function getBuddyTrigger() {
+  return ((buddy?.name ?? 'vexil').toLowerCase()) + ' ';
 }
 
 export { LINT_LOG, buddy as companionBuddy };

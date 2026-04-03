@@ -6,7 +6,7 @@ import {
   getNextIdentity, getActiveSessionId, setActiveSessionId,
   syncOmiSessions, IDENTITY_SEQ_KEY, ANIMALS
 } from './session.js';
-import { getProjectChar, saveProjectChar, isBuddyAnimal } from './companion.js';
+import { getProjectChar, saveProjectChar, isBuddyAnimal, getBuddyTrigger } from './companion.js';
 import { getStagedAttachments, markAttachmentsSent } from './attachments.js';
 import { getSlashCommands, isBuiltinCommand } from './slash-menu.js';
 import { pxLog } from './logger.js';
@@ -76,6 +76,7 @@ async function createSession(cwd, opts = {}) {
     _perfHistory: [],     // rolling perf stats per turn
     _turnStart: null,     // timestamp when message sent to stdin
     _ttft: null,          // time to first token (ms)
+    lastActivityAt: Date.now(),  // updated on tool_any + sendMessage; drives idle badge
   };
   sessions.set(id, session);
 
@@ -371,8 +372,11 @@ async function sendMessage(id, text) {
   const expanded = await expandSlashCommand(raw);
   pxLog('MSG→', `id:${id.slice(0,8)} "${raw.slice(0, 80)}${raw.length > 80 ? '…' : ''}"`);
   s._lastUserMsg = raw;  // captured for vexil routing in events.js
-  s._vexilTurn = raw.toLowerCase().startsWith('vexil ');
-  if (!s._vexilTurn) _deps.pushMessage(id, { type: 'user', text: raw }); // suppress user msg too for vexil turns
+  const trigger = getBuddyTrigger();
+  const afterTrigger = raw.toLowerCase().startsWith(trigger) ? raw.slice(trigger.length).trimStart() : null;
+  // Vexil turn only for conversational messages — not slash command invocations (skill output stays in session log)
+  s._vexilTurn = afterTrigger !== null && !afterTrigger.startsWith('/');
+  _deps.pushMessage(id, { type: 'user', text: raw }); // always show user message in session log
   s._workingPhase = 'thinking';
   _deps.setStatus(id, 'working');
 
@@ -403,6 +407,7 @@ async function sendMessage(id, text) {
   }
 
   s._turnStart = Date.now();
+  s.lastActivityAt = Date.now();
   s._ttft = null;
   const line = JSON.stringify({
     type: 'user',
@@ -417,6 +422,25 @@ async function sendMessage(id, text) {
 }
 
 
+// ── Session health ─────────────────────────────────────────
+
+const IDLE_STALE_MS    = 15 * 60 * 1000;  // 15 min without activity → stale
+const SESSION_WARN_AT  = 5;               // warn when opening session N+1
+
+export function getStaleSessionIds() {
+  const now = Date.now();
+  const activeId = getActiveSessionId();
+  return [...sessions.entries()]
+    .filter(([id, s]) =>
+      id !== activeId &&
+      s.status === 'idle' &&
+      (now - (s.lastActivityAt ?? now)) > IDLE_STALE_MS
+    )
+    .map(([id]) => id);
+}
+
+export { IDLE_STALE_MS };
+
 // ── Folder picker ──────────────────────────────────────────
 
 async function pickFolder() {
@@ -424,6 +448,20 @@ async function pickFolder() {
     const { isSelfDirectory } = await import('./session.js');
     const dir = await openDialog({ directory: true, multiple: false, title: 'Choose Project Folder' });
     if (!dir) return;
+    // Creation gate — offer to close idle sessions before adding another
+    if (sessions.size >= SESSION_WARN_AT) {
+      const staleIds = getStaleSessionIds();
+      if (staleIds.length > 0) {
+        const staleMin = Math.round(IDLE_STALE_MS / 60000);
+        const ok = await showConfirm(
+          `${sessions.size} sessions open, ${staleIds.length} idle >${staleMin}min.\nClose idle sessions before opening a new one?`,
+          'close idle + open'
+        );
+        if (ok) staleIds.forEach(id => killSession(id));
+        // always proceed regardless — "cancel" = open anyway
+      }
+    }
+
     if (await isSelfDirectory(dir)) {
       const proceed = await showConfirm(
         "This is Pixel Terminal's own source directory.\nEditing files here will crash all running sessions.\nProceed in read-only mode?",

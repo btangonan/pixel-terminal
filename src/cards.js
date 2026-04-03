@@ -6,7 +6,7 @@ import {
   sessions, sessionLogs, spriteRenderers, SpriteRenderer,
   getActiveSessionId, setActiveSessionId, formatTokens, syncOmiSessions
 } from './session.js';
-import { killSession } from './session-lifecycle.js';
+import { killSession, IDLE_STALE_MS } from './session-lifecycle.js';
 import { renderMessageLog, updateWorkingCursor, setPinToBottom } from './messages.js';
 
 export function renderSessionCard(id) {
@@ -51,9 +51,16 @@ export function updateSessionCard(id) {
 
   const statusEl = document.getElementById(`card-status-${id}`);
   if (statusEl) {
+    const isStale = s.status === 'idle'
+      && id !== getActiveSessionId()
+      && (Date.now() - (s.lastActivityAt ?? Date.now())) > IDLE_STALE_MS;
+
     if (s.unread) {
       statusEl.textContent = 'NEW';
       statusEl.className = 'card-badge unread';
+    } else if (isStale) {
+      statusEl.textContent = '\u2296';  // ⊖ stale idle indicator
+      statusEl.className = 'card-badge stale';
     } else {
       const label = { idle: 'IDLE', error: 'ERR', working: '.'.repeat(s._dotsPhase || 0), waiting: '\u00b7\u00b7\u00b7' }[s.status] ?? '\u00b7\u00b7\u00b7';
       statusEl.textContent = label;

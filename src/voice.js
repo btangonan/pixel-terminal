@@ -6,6 +6,7 @@ import { sendMessage } from './session-lifecycle.js';
 import { pushMessage } from './messages.js';
 import { setActiveSession } from './cards.js';
 import { LINT_LOG, setVexilLogListener } from './companion.js';
+import { clearSentAttachments } from './attachments.js';
 
 const { Command } = window.__TAURI__.shell;
 const { invoke } = window.__TAURI__.core;
@@ -52,6 +53,7 @@ const STATE_CLASS = {
   needs_approval: 'vexil-entry--blocked',
   warn:           'vexil-entry--warn',
   ops:            'vexil-entry--ops',
+  vexil:          'vexil-entry--buddy',
 };
 
 function renderVexilLog(entries) {
@@ -66,28 +68,34 @@ function renderVexilLog(entries) {
 
 function initVexilTabs() {
   const tabs = document.querySelectorAll('.voice-tab');
-  tabs.forEach(btn => {
-    btn.addEventListener('click', () => {
-      tabs.forEach(t => t.classList.remove('active'));
-      btn.classList.add('active');
-      const target = btn.dataset.vtab;
-      _vexilTabActive = target === 'vexil';
-      if ($.voiceLog)  $.voiceLog.classList.toggle('hidden', _vexilTabActive);
-      if ($.vexilLog) $.vexilLog.classList.toggle('hidden', !_vexilTabActive);
-      // Force-render current log when switching to Vexil tab
-      if (_vexilTabActive) renderVexilLog(LINT_LOG);
-    });
-  });
 
-  // Tab-aware CLR: clear whichever panel is active
+  function showTab(target) {
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.vtab === target));
+    _vexilTabActive = target === 'vexil';
+    if ($.voiceLog)        $.voiceLog.classList.toggle('hidden',        target !== 'voice');
+    if ($.vexilLog)        $.vexilLog.classList.toggle('hidden',        target !== 'vexil');
+    if ($.attachmentsPanel) $.attachmentsPanel.classList.toggle('hidden', target !== 'files');
+    // vexil-bio is always visible at bottom — not tab-toggled
+    if (target === 'vexil') renderVexilLog(LINT_LOG);
+  }
+
+  tabs.forEach(btn => btn.addEventListener('click', () => showTab(btn.dataset.vtab)));
+
+  // Initialize to BUDDY tab (matches active class in HTML)
+  showTab('vexil');
+
+  // Tab-aware CLR
   $.btnClearVoiceLog?.addEventListener('click', () => {
-    if (_vexilTabActive) {
+    const active = document.querySelector('.voice-tab.active')?.dataset.vtab;
+    if (active === 'vexil') {
       LINT_LOG.length = 0;
       renderVexilLog(LINT_LOG);
+    } else if (active === 'files') {
+      clearSentAttachments();
     } else {
       if ($.voiceLog) $.voiceLog.innerHTML = '';
     }
-  }, true);  // capture phase — fires before the existing listener in initVoice
+  }, true);  // capture phase
 }
 
 // ── Indicator updates ──────────────────────────────────────

@@ -243,7 +243,7 @@ export function renderAttachmentPanel() {
   if (!container) return;
   const atts = sessionId ? (store.get(sessionId) || []) : [];
   if (atts.length === 0) {
-    container.innerHTML = '<div class="att-empty">drop files here</div>';
+    container.innerHTML = '';
     return;
   }
   container.innerHTML = atts.map(a =>
@@ -317,14 +317,14 @@ function wireContextMenu() {
   });
 }
 
-// ── Clear button ─────────────────────────────────────────
+// ── Clear sent attachments (called by FILES tab CLR button in voice.js) ──────
 
-function wireClearBtn() {
-  document.getElementById('btn-clear-attachments')?.addEventListener('click', () => {
-    const sid = _getActiveSessionId?.();
-    if (!sid) return;
-    const atts = store.get(sid);
-    if (atts) store.set(sid, atts.filter(a => a.status === 'staged'));
-    renderAttachmentPanel();
-  });
+export function clearSentAttachments() {
+  const sid = _getActiveSessionId?.();
+  if (!sid) return;
+  const atts = store.get(sid);
+  if (atts) store.set(sid, atts.filter(a => a.status === 'staged'));
+  renderAttachmentPanel();
 }
+
+function wireClearBtn() { /* no-op: CLR now routed through voice tab header */ }

@@ -79,6 +79,11 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }, 400);
 
+  // Refresh stale idle badges every 60s (threshold is 15min, so 60s granularity is fine)
+  setInterval(() => {
+    sessions.forEach((_, id) => updateSessionCard(id));
+  }, 60_000);
+
   // Open links in system browser
   $.messageLog.addEventListener('click', (e) => {
     const link = e.target.closest('a[href]');
@@ -165,43 +170,6 @@ window.addEventListener('DOMContentLoaded', () => {
   const _savedH = localStorage.getItem('sidebar-session-list-h');
   if (_savedH) { sessionList.style.flex = 'none'; sessionList.style.height = _savedH + 'px'; }
 
-  // Attachments section vertical resize (voice log / attachments boundary)
-  const voiceLog = $.voiceLog;
-  const attHResizeHandle = $.attHResize;
-  let _attResizing = false, _attStartY = 0, _attStartH = 0;
-  let _attRafId = null, _attH = 0;
-  attHResizeHandle.addEventListener('mousedown', (e) => {
-    _attResizing = true;
-    _attStartY = e.clientY;
-    _attStartH = voiceLog.offsetHeight;
-    attHResizeHandle.classList.add('dragging');
-    document.body.style.cursor = 'ns-resize';
-    document.body.style.userSelect = 'none';
-    e.preventDefault();
-  });
-  window.addEventListener('mousemove', (e) => {
-    if (!_attResizing) return;
-    const sidebarH = sidebar.offsetHeight;
-    _attH = Math.max(0, Math.min(sidebarH - 120, _attStartH + (e.clientY - _attStartY)));
-    if (!_attRafId) {
-      _attRafId = requestAnimationFrame(() => {
-        voiceLog.style.flex = 'none';
-        voiceLog.style.height = _attH + 'px';
-        _attRafId = null;
-      });
-    }
-  });
-  window.addEventListener('mouseup', () => {
-    if (!_attResizing) return;
-    _attResizing = false;
-    if (_attRafId) { cancelAnimationFrame(_attRafId); _attRafId = null; voiceLog.style.height = _attH + 'px'; }
-    attHResizeHandle.classList.remove('dragging');
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-    localStorage.setItem('sidebar-voice-log-h', _attH);
-  });
-  const _savedVoiceH = localStorage.getItem('sidebar-voice-log-h');
-  if (_savedVoiceH) { voiceLog.style.flex = 'none'; voiceLog.style.height = _savedVoiceH + 'px'; }
 
   // ── Button wiring ───────────────────────────────────────
   $.btnNewSession.addEventListener('click', pickFolder);

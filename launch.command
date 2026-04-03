@@ -8,6 +8,7 @@ pgrep -f "tauri dev" | grep -v "$MY_PID" | xargs kill 2>/dev/null
 pgrep -f "cargo.*pixel" | grep -v "$MY_PID" | xargs kill 2>/dev/null
 pkill -f "pixel_voice_bridge" 2>/dev/null   # kill zombie bridge processes holding BLE slot
 pkill -f "OmiWebhook" 2>/dev/null
+pkill -f "vexil_master.py" 2>/dev/null
 sleep 0.5
 
 # Close ALL Terminal windows/tabs from previous pixel-terminal launches.
@@ -65,4 +66,21 @@ tell application "Terminal"
 end tell
 EOF
 
-npm run tauri dev 2>&1 | tee "$LOG_FILE"
+# Wipe event feeds from last run (fresh slate per launch)
+rm -f /tmp/vexil_feed.jsonl /tmp/vexil_master_out.jsonl
+
+# Source shell profiles so PATH includes the claude CLI for the Vexil Master daemon.
+# .command files launched from Finder don't source .zshrc — only login shells.
+# shellcheck disable=SC1090
+source ~/.zprofile 2>/dev/null || true
+source ~/.zshrc    2>/dev/null || true
+
+# Sync buddy.json from real Claude Code account data (name, species, rarity, stats)
+bun run "$(dirname "$0")/scripts/sync_real_buddy.ts" >> "$LOG_FILE" 2>&1 || true
+
+# Start Vexil Master daemon — proactive cross-session commentary
+python3 "$(dirname "$0")/scripts/vexil_master.py" >> "$LOG_FILE" 2>&1 &
+VEXIL_MASTER_PID=$!
+trap "kill $VEXIL_MASTER_PID 2>/dev/null; exit" EXIT INT TERM
+
+npm run tauri dev 2>&1 | tee -a "$LOG_FILE"

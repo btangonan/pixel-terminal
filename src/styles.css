@@ -123,22 +123,6 @@ body {
 }
 #sidebar-h-resize:hover, #sidebar-h-resize.dragging { background: var(--border-hi); }
 
-#att-h-resize {
-  height: 1px;
-  min-height: 1px;
-  background: var(--border);
-  cursor: ns-resize;
-  flex-shrink: 0;
-  position: relative;
-  transition: background 0.1s;
-}
-#att-h-resize::after {
-  content: '';
-  position: absolute;
-  left: 0; right: 0;
-  top: -4px; bottom: -4px;
-}
-#att-h-resize:hover, #att-h-resize.dragging { background: var(--border-hi); }
 
 #sidebar-header {
   display: flex;
@@ -294,6 +278,7 @@ body {
 .card-badge.unread  { border-color: var(--unread);    color: var(--unread); }
 .card-badge.working { border-color: transparent; color: var(--text-dim); width: 28px; overflow: hidden; }
 .card-badge.waiting { border-color: transparent; color: var(--text-mute); }
+.card-badge.stale   { border-color: transparent; color: var(--text-mute); opacity: 0.5; }
 @keyframes badge-pulse {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.2; }
@@ -362,6 +347,13 @@ body.no-session-active #empty-state { display: block; }
 #message-log::-webkit-scrollbar { width: 3px; }
 #message-log::-webkit-scrollbar-track { background: transparent; }
 #message-log::-webkit-scrollbar-thumb { background: var(--border-hi); }
+/* Buddy bio — persistent footer, always at panel bottom */
+.vexil-bio { padding: 6px 6px 4px; border-top: 1px solid var(--border); margin-top: 4px; }
+.vexil-bio-name { font-family: var(--font-mono); font-size: 9px; color: var(--text); opacity: 0.9; text-transform: uppercase; letter-spacing: 0.04em; }
+.vexil-bio-personality { font-family: var(--font-mono); font-size: 9px; color: var(--text-mid); opacity: 0.7; margin-top: 2px; font-style: italic; line-height: 1.35; }
+
+/* Reserve bottom clearance when companion bubble is visible so it doesn't overlap log text */
+#message-log.companion-active { padding-bottom: 180px; }
 
 /* ── Messages — terminal line style ────────── */
 
@@ -893,6 +885,7 @@ canvas.sprite-canvas {
 }
 .vexil-entry--blocked { color: #ff6b6b; }
 .vexil-entry--warn    { color: #ffa94d; }
+.vexil-entry--buddy   { color: var(--companion-hue); }
 
 /* ── Settings panel hidden state ─── */
 #settings-panel.hidden { display: none; }
@@ -1021,38 +1014,16 @@ canvas.sprite-canvas {
 }
 .att-tok-rm:hover { color: var(--accent); }
 
-/* ── Attachments sidebar panel ────────── */
-
-#attachments-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 5px 8px 4px;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-#btn-clear-attachments {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  color: var(--text-mute);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 0 2px;
-  opacity: 0.5;
-}
-#btn-clear-attachments:hover { opacity: 1; }
+/* ── Attachments (FILES tab) ────────── */
 
 #attachments-panel {
   flex: 1 1 40%;
-  min-height: 28px;
+  min-height: 0;
   min-width: 0;
   overflow-y: auto;
   padding: 4px 6px;
 }
+#attachments-panel.hidden { display: none; }
 #attachments-panel::-webkit-scrollbar { width: 3px; }
 #attachments-panel::-webkit-scrollbar-track { background: transparent; }
 #attachments-panel::-webkit-scrollbar-thumb { background: var(--border-hi); }
@@ -1451,10 +1422,7 @@ body.no-session-active #btn-new-session.plus-inverted {
 .companion-wrap:not(.hidden) { opacity: 1; pointer-events: all; }
 
 .companion-sprite-wrap {
-  width: 48px;
-  height: 48px;
-  flex-shrink: 0;
-  image-rendering: pixelated;
+  display: none;
 }
 
 .companion-sprite-canvas {
