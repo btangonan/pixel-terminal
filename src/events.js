@@ -5,7 +5,7 @@ import { sessions, sessionLogs, getActiveSessionId } from './session.js';
 import { pushMessage, updateWorkingCursor, updateCursorPhase, scheduleScroll } from './messages.js';
 import { updateSessionCard } from './cards.js';
 import { pxLog } from './logger.js';
-import { addToVexilLog, getBuddyTrigger } from './companion.js';
+import { addToVexilLog, getBuddyTrigger, triggerAsciiAction } from './companion.js';
 
 // ── Vexil Master feed (proactive cross-session commentary) ──────────────
 const VEXIL_FEED_PATH = '/tmp/vexil_feed.jsonl';
@@ -60,6 +60,7 @@ export function handleEvent(id, event) {
         s._workingPhase = 'writing';
         updateCursorPhase('writing');
       } else if (blk?.type === 'tool_use') {
+        triggerAsciiAction();
         pxLog('TOOL', `id:${id.slice(0,8)} ${blk.name}`);
         if (!isInternalTool(blk.name)) {
           // Show tool name immediately — input arrives later via 'assistant'

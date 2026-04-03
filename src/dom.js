@@ -19,7 +19,8 @@ export function initDOM() {
   $.settingsPanel = document.getElementById('settings-panel');
   $.settingsBtn = document.getElementById('settings-btn');
   $.voiceLog = document.getElementById('voice-log');
-  $.vexilLog = document.getElementById('vexil-log');
+  $.vexilLog   = document.getElementById('vexil-log');
+  $.vexilAscii = document.getElementById('vexil-ascii');
   $.voiceLogHeader = document.getElementById('voice-log-header');
   $.aboutOverlay = document.getElementById('about-overlay');
   $.aboutClose = document.getElementById('about-close');

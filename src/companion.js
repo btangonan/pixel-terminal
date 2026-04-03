@@ -13,6 +13,7 @@
  */
 
 import { SPRITE_DATA } from './session.js';
+import { SPRITES, EYE_CHARS, DEFAULT_EYE, HATS, renderFrame } from './ascii-sprites.js';
 
 const { invoke } = window.__TAURI__.core;
 
@@ -163,34 +164,110 @@ function injectCompanionPanel() {
   });
 }
 
-// ── Sprite rendering ──────────────────────────────────────────────────────────
+// ── ASCII sprite rendering + animation ───────────────────────────────────────
+
+let _asciiAnimTimer   = null;  // idle→fidget cycle timer
+let _asciiActionTimer = null;  // action frame auto-return timer
+let _asciiPre         = null;  // the live <pre> element
+let _asciiState       = 'idle'; // 'idle' | 'fidget' | 'action'
+let _asciiSpecies     = 'duck';
+let _asciiEye         = DEFAULT_EYE;
+let _asciiHat         = 'none';
+
+function getEyeChar(buddy) {
+  // buddy.eyes may be set by Claude Code sync (e.g. 'sleepy', 'star')
+  // or absent — fall back to dot
+  const raw = buddy?.eyes ?? 'dot';
+  return EYE_CHARS[raw] ?? DEFAULT_EYE;
+}
+
+function updateAsciiFrame(frameIdx) {
+  if (!_asciiPre) return;
+  const lines = renderFrame(_asciiSpecies, frameIdx, _asciiEye, _asciiHat);
+  _asciiPre.textContent = lines.join('\n');
+}
+
+function scheduleNextFidget() {
+  clearTimeout(_asciiAnimTimer);
+  // Idle for 3–8 seconds then briefly fidget
+  const delay = 3000 + Math.random() * 5000;
+  _asciiAnimTimer = setTimeout(() => {
+    if (_asciiState !== 'idle') { scheduleNextFidget(); return; }
+    _asciiState = 'fidget';
+    updateAsciiFrame(1);
+    // Return to idle after 350ms
+    setTimeout(() => {
+      _asciiState = 'idle';
+      updateAsciiFrame(0);
+      scheduleNextFidget();
+    }, 350);
+  }, delay);
+}
+
+/** Called from events.js on tool_use — briefly plays action frame */
+export function triggerAsciiAction() {
+  if (!_asciiPre || _asciiState === 'action') return;
+  // Only show action frame ~40% of tool calls (avoids spam on rapid tools)
+  if (Math.random() > 0.4) return;
+  clearTimeout(_asciiActionTimer);
+  clearTimeout(_asciiAnimTimer);
+  _asciiState = 'action';
+  updateAsciiFrame(2);
+  _asciiActionTimer = setTimeout(() => {
+    _asciiState = 'idle';
+    updateAsciiFrame(0);
+    scheduleNextFidget();
+  }, 600);
+}
 
 function renderCompanionSprite() {
+  // ── Floating pixel sprite (bottom-right bubble) ──────────────────────────
   const spriteWrap = document.getElementById('companion-sprite');
-  if (!spriteWrap || !buddy) return;
+  if (spriteWrap && buddy) {
+    const spriteKey = BUDDY_SPRITE_MAP[buddy.species] ?? 'cat';
+    const data = SPRITE_DATA[spriteKey];
+    if (data) {
+      spriteWrap.innerHTML = '';
+      const canvas = document.createElement('canvas');
+      canvas.width = 48; canvas.height = 48;
+      canvas.className = 'companion-sprite-canvas';
+      spriteWrap.appendChild(canvas);
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      img.onload = () => {
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(img, 0, 0, 16, 16, 0, 0, 48, 48);
+      };
+      img.src = data;
+    }
+  }
 
-  const spriteKey = BUDDY_SPRITE_MAP[buddy.species] ?? 'cat';
-  const data = SPRITE_DATA[spriteKey];
-  if (!data) return;
+  // ── ASCII buddy in sidebar panel ──────────────────────────────────────────
+  const panel = document.getElementById('vexil-ascii');
+  if (!panel || !buddy) return;
 
-  // Clear any previously rendered canvas before appending a new one
-  spriteWrap.innerHTML = '';
+  // Resolve species — use the ASCII species name directly.
+  // buddy.species from Claude Code sync is the canonical key (e.g. 'duck').
+  // SPRITES may not have all pixel-terminal-only species — fall back to duck.
+  _asciiSpecies = SPRITES[buddy.species] ? buddy.species : 'duck';
+  _asciiEye     = getEyeChar(buddy);
+  _asciiHat     = buddy.hat ?? 'none';
 
-  // Simple canvas-based render: idle frame only (frame 0)
-  const canvas = document.createElement('canvas');
-  canvas.width = 48;
-  canvas.height = 48;
-  canvas.className = 'companion-sprite-canvas';
-  spriteWrap.appendChild(canvas);
+  // Clear previous animation
+  clearTimeout(_asciiAnimTimer);
+  clearTimeout(_asciiActionTimer);
+  _asciiState = 'idle';
 
-  const ctx = canvas.getContext('2d');
-  const img = new Image();
-  img.onload = () => {
-    // Sheet is 64×16 (4 frames × 16×16). Frame 0 = x:0, 16×16 → render at 3x (48×48)
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(img, 0, 0, 16, 16, 0, 0, 48, 48);
-  };
-  img.src = data;
+  // Build <pre>
+  panel.innerHTML = '';
+  const pre = document.createElement('pre');
+  pre.className = 'vexil-ascii-art';
+  panel.appendChild(pre);
+  _asciiPre = pre;
+
+  // Render initial idle frame and start animation
+  updateAsciiFrame(0);
+  scheduleNextFidget();
 }
 
 // ── Bubble display ────────────────────────────────────────────────────────────

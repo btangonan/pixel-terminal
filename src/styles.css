@@ -347,6 +347,33 @@ body.no-session-active #empty-state { display: block; }
 #message-log::-webkit-scrollbar { width: 3px; }
 #message-log::-webkit-scrollbar-track { background: transparent; }
 #message-log::-webkit-scrollbar-thumb { background: var(--border-hi); }
+/* ── ASCII buddy sprite panel ──────────────────── */
+#vexil-ascii {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 8px 8px;
+  min-height: 120px;
+}
+#vexil-ascii.hidden { display: none; }
+
+.vexil-ascii-art {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--companion-hue, #39FF14);
+  margin: 0;
+  padding: 0;
+  white-space: pre;
+  user-select: none;
+  text-align: left;
+  /* Glow effect matches the buddy's hue */
+  text-shadow: 0 0 8px color-mix(in srgb, var(--companion-hue, #39FF14) 60%, transparent);
+  opacity: 0.92;
+  transition: opacity 0.1s;
+}
+
 /* Buddy bio — persistent footer, always at panel bottom */
 .vexil-bio { padding: 6px 6px 4px; border-top: 1px solid var(--border); margin-top: 4px; }
 .vexil-bio-name { font-family: var(--font-mono); font-size: 9px; color: var(--text); opacity: 0.9; text-transform: uppercase; letter-spacing: 0.04em; }
