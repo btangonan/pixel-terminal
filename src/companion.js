@@ -350,16 +350,18 @@ async function pollLintFile() {
     return;
   }
 
-  // Persist to chat log before displaying
-  addToLintLog(state, msg);
   invoke('js_log', { msg: `[vexil-lint] state:${state} "${msg?.slice(0, 80)}"` }).catch(() => {});
 
   if (state === 'needs_approval') {
+    // Interactive bubble handles user communication — no log entry needed
     _approvalPending = true;
     enqueueBubble({ msg, type: 'ask', interactive: true });
   } else if (state === 'approved' || state === 'denied' || state === 'timeout_pass') {
-    // Terminal states — allow bubble to auto-dismiss
+    // Terminal states — bubble auto-dismisses, no log entry
     hideBubble();
+  } else {
+    // blocked / warn — genuinely informational, log to BUDDY tab
+    addToLintLog(state, msg);
   }
 }
 
