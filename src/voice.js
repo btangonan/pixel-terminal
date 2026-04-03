@@ -73,7 +73,6 @@ function initVexilTabs() {
     tabs.forEach(t => t.classList.toggle('active', t.dataset.vtab === target));
     _vexilTabActive = target === 'vexil';
     if ($.voiceLog)        $.voiceLog.classList.toggle('hidden',        target !== 'voice');
-    if ($.vexilAscii)      $.vexilAscii.classList.toggle('hidden',      target !== 'vexil');
     if ($.vexilLog)        $.vexilLog.classList.toggle('hidden',        target !== 'vexil');
     if ($.attachmentsPanel) $.attachmentsPanel.classList.toggle('hidden', target !== 'files');
     // vexil-bio is always visible at bottom — not tab-toggled

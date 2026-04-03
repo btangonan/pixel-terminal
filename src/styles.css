@@ -347,16 +347,12 @@ body.no-session-active #empty-state { display: block; }
 #message-log::-webkit-scrollbar { width: 3px; }
 #message-log::-webkit-scrollbar-track { background: transparent; }
 #message-log::-webkit-scrollbar-thumb { background: var(--border-hi); }
-/* ── ASCII buddy sprite panel ──────────────────── */
+/* ── ASCII buddy sprite (inside vexil-bio, replaces personality text) ── */
 #vexil-ascii {
-  flex: 0 0 auto;
+  margin-top: 6px;
   display: flex;
-  align-items: center;
   justify-content: center;
-  padding: 16px 8px 8px;
-  min-height: 120px;
 }
-#vexil-ascii.hidden { display: none; }
 
 .vexil-ascii-art {
   font-family: var(--font-mono);

@@ -372,8 +372,15 @@ async function sendMessage(id, text) {
   const expanded = await expandSlashCommand(raw);
   pxLog('MSG→', `id:${id.slice(0,8)} "${raw.slice(0, 80)}${raw.length > 80 ? '…' : ''}"`);
   s._lastUserMsg = raw;  // captured for vexil routing in events.js
-  const trigger = getBuddyTrigger();
-  const afterTrigger = raw.toLowerCase().startsWith(trigger) ? raw.slice(trigger.length).trimStart() : null;
+  const trigger = getBuddyTrigger();           // e.g. "vexil "
+  const triggerName = trigger.trim();           // e.g. "vexil"
+  const lowerRaw = raw.toLowerCase();
+  // Match "vexil <message>" (start) OR "hey vexil" / "vexil?" (word anywhere)
+  const startsWithTrigger = lowerRaw.startsWith(trigger);
+  const containsTrigger   = !startsWithTrigger && new RegExp(`\\b${triggerName}\\b`).test(lowerRaw);
+  const afterTrigger = startsWithTrigger ? raw.slice(trigger.length).trimStart()
+                      : containsTrigger  ? raw
+                      : null;
   // Vexil turn only for conversational messages — not slash command invocations (skill output stays in session log)
   s._vexilTurn = afterTrigger !== null && !afterTrigger.startsWith('/');
   _deps.pushMessage(id, { type: 'user', text: raw }); // always show user message in session log

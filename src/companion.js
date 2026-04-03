@@ -246,10 +246,13 @@ function renderCompanionSprite() {
   const panel = document.getElementById('vexil-ascii');
   if (!panel || !buddy) return;
 
-  // Resolve species — use the ASCII species name directly.
-  // buddy.species from Claude Code sync is the canonical key (e.g. 'duck').
-  // SPRITES may not have all pixel-terminal-only species — fall back to duck.
-  _asciiSpecies = SPRITES[buddy.species] ? buddy.species : 'duck';
+  // Resolve display species from personality text first (same logic as bio label).
+  // buddy.species is the Claude Code sync value (e.g. 'duck'); the personality
+  // text (the "soul") is authoritative for display — it may say "dragon".
+  const KNOWN_ASCII_SPECIES = Object.keys(SPRITES);
+  const personalityLower = (buddy.personality ?? '').toLowerCase();
+  const displaySpecies = KNOWN_ASCII_SPECIES.find(s => personalityLower.includes(s)) ?? buddy.species;
+  _asciiSpecies = SPRITES[displaySpecies] ? displaySpecies : 'duck';
   _asciiEye     = getEyeChar(buddy);
   _asciiHat     = buddy.hat ?? 'none';
 
