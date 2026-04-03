@@ -109,7 +109,6 @@ def build_persona() -> str:
         f"{personality}\n\n"
         f"You watch across multiple Claude Code sessions and occasionally drop one line "
         f"in a speech bubble. You're not {name} — you're writing its line.\n"
-        f"One short physical action in asterisks is optional — one beat, specific to what just happened.\n"
         f"Under 20 words total. Say what's wrong, not what's happening. No preamble."
     )
 
