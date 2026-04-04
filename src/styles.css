@@ -1696,22 +1696,6 @@ body.no-session-active #btn-new-session.plus-inverted {
   pointer-events: auto;
 }
 
-/* Familiar name label — sits below sprite, hidden behind view overlay */
-.familiar-name {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font-size: 8px;
-  letter-spacing: 0.08em;
-  color: var(--text-mid);
-  padding: 2px 0 3px;
-  pointer-events: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 /* Overlay backdrop */
 .fc-overlay {

@@ -313,13 +313,6 @@ function _buildSpriteWrap(wrap, id) {
   pre.textContent = renderFrame(s.familiar.species, 0, s.familiar.eye, s.familiar.hat).join('\n');
   wrap.appendChild(pre);
 
-  if (s.familiar.name) {
-    const nameLabel = document.createElement('div');
-    nameLabel.className = 'familiar-name';
-    nameLabel.textContent = s.familiar.name.toUpperCase();
-    wrap.appendChild(nameLabel);
-  }
-
   const viewBtn = document.createElement('button');
   viewBtn.className = 'familiar-view-btn';
   viewBtn.innerHTML = 'about<br>me';
