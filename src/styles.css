@@ -67,9 +67,6 @@ body {
   app-region: drag;
   z-index: 100;
   border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 #app {
@@ -133,6 +130,10 @@ body {
 }
 #sidebar-header .pixel-label { color: var(--accent); }
 #app-title-img {
+  position: absolute;
+  top: 50%;
+  left: calc(255px + (100% - 255px) / 2);
+  transform: translate(-50%, -50%);
   height: 15px;
   width: auto;
   image-rendering: pixelated;
