@@ -113,6 +113,9 @@ async function spawnClaude(id) {
     if (s._modelOverride) claudeArgs.push('--model', s._modelOverride);
     if (s._effortOverride) claudeArgs.push('--effort', s._effortOverride);
     if (s._fallbackModel) claudeArgs.push('--fallback-model', s._fallbackModel);
+    // Reset before registering listeners — system/init can fire immediately after
+    // cmd.spawn() resolves; setting _initialized=false AFTER spawn would clobber it.
+    s._initialized = false;
     const cmd = Command.create('claude', claudeArgs, { cwd: s.cwd });
 
     let _buf = '';
@@ -158,8 +161,7 @@ async function spawnClaude(id) {
     const child = await cmd.spawn();
     s.child = child;
     s.toolPending = {};
-    s._initialized = false;  // reset — block direct sends until system/init fires
-    // _pendingQueue is flushed in system/init handler — Claude only reads stdin after that event
+    // _initialized already reset above — do NOT reset here (init event may have already fired)
 
   } catch (err) {
     _deps.pushMessage(id, { type: 'error', text: `Failed to start Claude Code: ${err}` });
