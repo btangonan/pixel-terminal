@@ -154,6 +154,7 @@ def check_tool_patterns(
     sid: str,
     sequences: dict,
     now: float,
+    session_born: dict = None,
 ) -> Tuple[Optional[str], dict]:
     """
     Inspect per-session tool sequence for patterns worth commenting on.
@@ -180,7 +181,9 @@ def check_tool_patterns(
             }
 
     # Read-heavy: N consecutive reads within time window with no write
-    if len(entries) >= READ_HEAVY_THRESHOLD:
+    # Suppress during session orientation window (first 120s) — /gsd and CLAUDE.md reads are expected
+    session_age = now - session_born.get(sid, now)
+    if len(entries) >= READ_HEAVY_THRESHOLD and session_age > 120:
         tail = entries[-READ_HEAVY_THRESHOLD:]
         tail_ts    = [ts for ts, _, _ in tail]
         tail_tools = [t for _, t, _ in tail]
@@ -281,6 +284,8 @@ def main() -> None:
     recent_activity: Dict[str, list] = {}
     # Per-session last comment time for turn_complete cadence (20s cooldown)
     last_comment_per_session: Dict[str, float] = {}
+    # First time we saw any event for this session — used to suppress orientation-phase triggers
+    session_born: Dict[str, float] = {}
     # turn_complete events seen this batch: {session_id: tool_count}
     turn_complete_this_batch: Dict[str, int] = {}
 
@@ -357,6 +362,8 @@ def main() -> None:
                 hint = entry.get('hint', '')  # human-readable context from toolHint()
                 if not tool:
                     continue
+                if sid not in session_born:
+                    session_born[sid] = ets
                 if sid not in tool_sequences:
                     tool_sequences[sid] = collections.deque(maxlen=20)
                 tool_sequences[sid].append((ets, tool, hint))
@@ -451,7 +458,7 @@ def main() -> None:
         # ── Check tool patterns once per batch (not per entry) ───────────────
         if trigger is None and (now - last_comment_ts) > COOLDOWN:
             for sid in sessions_with_new_tools:
-                pat, data = check_tool_patterns(sid, tool_sequences, now)
+                pat, data = check_tool_patterns(sid, tool_sequences, now, session_born)
                 if pat:
                     pat_key = f'{sid}:{pat}'
                     if pat_key not in fired_patterns:
