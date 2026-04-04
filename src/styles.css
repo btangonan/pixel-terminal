@@ -1696,6 +1696,23 @@ body.no-session-active #btn-new-session.plus-inverted {
   pointer-events: auto;
 }
 
+/* Familiar name label — sits below sprite, hidden behind view overlay */
+.familiar-name {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  color: var(--text-mid);
+  padding: 2px 0 3px;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Overlay backdrop */
 .fc-overlay {
   position: fixed;
@@ -1720,6 +1737,7 @@ body.no-session-active #btn-new-session.plus-inverted {
 /* Header */
 .fc-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   padding: 6px 10px 5px;
@@ -1737,6 +1755,14 @@ body.no-session-active #btn-new-session.plus-inverted {
   font-size: var(--fs-xs);
   color: var(--fc-rarity-color, #555);
   letter-spacing: 0.5px;
+}
+
+.fc-type {
+  width: 100%;
+  font-size: var(--fs-xs);
+  color: var(--text-mid);
+  letter-spacing: 0.5px;
+  padding-top: 2px;
 }
 
 /* Body: 2-column */
@@ -1856,9 +1882,35 @@ body.no-session-active #btn-new-session.plus-inverted {
   text-shadow: 0 0 6px rgba(255, 215, 0, 0.5);
 }
 
-/* Phase 3 placeholder — re-roll button + credits go here */
+/* Re-roll slot + button */
 .fc-reroll-slot {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.fc-reroll-btn {
+  background: none;
+  border: 1px solid var(--border-hi);
+  color: var(--text-mid);
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+.fc-reroll-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.fc-reroll-btn--broke {
+  color: #c0392b;
+  border-color: #c0392b;
+  animation: fc-shake 0.25s ease;
+}
+@keyframes fc-shake {
+  0%,100%{transform:translateX(0)}
+  25%{transform:translateX(-4px)}
+  75%{transform:translateX(4px)}
 }

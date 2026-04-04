@@ -5,7 +5,7 @@ import {
   sessions, sessionLogs,
   rollFamiliarBones, assignFamiliarHue, releaseFamiliarHue,
   getActiveSessionId, setActiveSessionId,
-  syncOmiSessions,
+  syncOmiSessions, getFamiliarRerollCount,
 } from './session.js';
 import { getBuddyTrigger } from './companion.js';
 import { getStagedAttachments, markAttachmentsSent } from './attachments.js';
@@ -42,7 +42,7 @@ function createSession(cwd, opts = {}) {
 
   // Deterministic familiar from project path — same project always rolls same bones.
   // Bones are never stored; always recomputed. Hue is ephemeral (resets on restart).
-  const familiar    = rollFamiliarBones(cwd);
+  const familiar    = rollFamiliarBones(cwd, getFamiliarRerollCount(cwd));
   const familiarHue = assignFamiliarHue(cwd || id, id);
 
   sessionLogs.set(id, { messages: [] });

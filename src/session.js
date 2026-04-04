@@ -74,6 +74,38 @@ function _mulberry32(seed) {
 }
 
 const FAMILIAR_SALT = 'pixel-familiar-2026';
+
+// Syllable pools — five thematic categories (Asian Folklore, Polynesian, Tolkien/Elven, Valyrian, Cyber-Pet)
+const _NAME_STARTS = [
+  // Asian Folklore & Yokai
+  'Ryu', 'Sen', 'Kai', 'Jin', 'Feng', 'Qin', 'Bai', 'Shir', 'Zen', 'Tao',
+  // Polynesian
+  'Ka', 'Ki', 'Ma', 'Wa', 'Ra', 'Ori', 'Alo', 'Koa', 'Lani', 'Mana', 'Nalu',
+  // Tolkien / Elven
+  'Aer', 'Cal', 'Gil', 'Lin', 'Sil', 'Thal', 'Fin',
+  'Ael', 'Aran', 'Cael', 'Elan', 'Faer', 'Helm', 'Saer', 'Bael',
+  // Valyrian
+  'Drac', 'Vae', 'Tar', 'Rys', 'Jae', 'Zho', 'Laen',
+  'Aeg', 'Daen', 'Nar', 'Tor',
+  // Cyber-Pet
+  'Zot', 'Blip', 'Xel', 'Hex', 'Rez', 'Vox', 'Nyx',
+  'Arc', 'Chip', 'Flux', 'Kern', 'Var', 'Sig', 'Rad',
+];
+const _NAME_ENDS = [
+  // Asian Folklore
+  'on', 'rin', 'kin', 'gu', 'yu', 'zen',
+  // Polynesian
+  'kai', 'mai', 'aia', 'lua', 'alo', 'ana', 'ila', 'ali',
+  // Tolkien / Elven
+  'wen', 'dal', 'dor', 'en', 'shan', 'aen', 'ion', 'ros', 'mir', 'las', 'ael',
+  // Valyrian
+  'rys', 'orn', 'oz', 'ur', 'ys',
+  // Cyber-Pet
+  'ron', 'bit', 'rom', 'arc', 'ware',
+];
+// Hard blocks — real-world IP, known words, or sounds bad
+const _NAME_BLOCKLIST = new Set(['Finbit', 'Aegon', 'Radon', 'Torys']);
+
 export const FAMILIAR_SPECIES = [
   'duck', 'goose', 'blob', 'cat', 'dragon', 'octopus', 'owl',
   'penguin', 'turtle', 'snail', 'ghost', 'axolotl', 'capybara',
@@ -83,16 +115,28 @@ const _FAMILIAR_EYE_STYLES  = ['dot', 'star', 'x', 'circle', 'at', 'degree'];
 const _FAMILIAR_HATS        = ['none', 'crown', 'tophat', 'propeller', 'halo', 'wizard', 'beanie', 'tinyduck'];
 const _FAMILIAR_STAT_NAMES  = ['DEBUGGING', 'PATIENCE', 'CHAOS', 'WISDOM', 'SNARK'];
 const _FAMILIAR_EYE_CHARS   = { dot: '·', star: '✦', x: '×', circle: '◉', at: '@', degree: '°' };
+// Stat bands: dumpMax < midMin < midMax < peakMin — no tier bleed, no range overlap.
 const _FAMILIAR_RARITIES = [
-  { name: 'common',    weight: 60, statFloor: 5,  peakMin: 55,  peakMax: 84,  dumpMin: 1,  dumpMax: 19 },
-  { name: 'uncommon',  weight: 25, statFloor: 15, peakMin: 65,  peakMax: 94,  dumpMin: 5,  dumpMax: 29 },
-  { name: 'rare',      weight: 10, statFloor: 25, peakMin: 75,  peakMax: 100, dumpMin: 15, dumpMax: 39 },
-  { name: 'epic',      weight: 4,  statFloor: 35, peakMin: 85,  peakMax: 100, dumpMin: 25, dumpMax: 49 },
-  { name: 'legendary', weight: 1,  statFloor: 50, peakMin: 100, peakMax: 100, dumpMin: 40, dumpMax: 64 },
+  { name: 'common',    weight: 60, midMin: 10, midMax: 40,  peakMin: 55,  peakMax: 84,  dumpMin: 1,  dumpMax: 9  },
+  { name: 'uncommon',  weight: 25, midMin: 20, midMax: 55,  peakMin: 65,  peakMax: 94,  dumpMin: 10, dumpMax: 19 },
+  { name: 'rare',      weight: 10, midMin: 30, midMax: 65,  peakMin: 75,  peakMax: 100, dumpMin: 20, dumpMax: 29 },
+  { name: 'epic',      weight: 4,  midMin: 40, midMax: 74,  peakMin: 85,  peakMax: 100, dumpMin: 30, dumpMax: 39 },
+  { name: 'legendary', weight: 1,  midMin: 55, midMax: 84,  peakMin: 100, peakMax: 100, dumpMin: 40, dumpMax: 50 },
 ];
 
-export function rollFamiliarBones(projectPath) {
-  const input = projectPath || ('__anon-' + Math.random().toString(36).slice(2));
+// ── Re-roll helpers ──────────────────────────────────────────
+export function getFamiliarRerollCount(projectPath) {
+  return parseInt(localStorage.getItem(`familiar-reroll-${projectPath}`) || '0', 10);
+}
+export function incrementFamiliarReroll(projectPath) {
+  const count = getFamiliarRerollCount(projectPath) + 1;
+  localStorage.setItem(`familiar-reroll-${projectPath}`, String(count));
+  return count;
+}
+
+export function rollFamiliarBones(projectPath, rerollCount = 0) {
+  const base  = projectPath || ('__anon-' + Math.random().toString(36).slice(2));
+  const input = rerollCount > 0 ? `${base}-r${rerollCount}` : base;
   const seed  = _fnv1a(input + FAMILIAR_SALT);
   const rng   = _mulberry32(seed);
 
@@ -119,17 +163,26 @@ export function rollFamiliarBones(projectPath) {
   const peakIdx = Math.floor(rng() * 5);
   const dumpRaw = Math.floor(rng() * 4);
   const dumpIdx = dumpRaw >= peakIdx ? dumpRaw + 1 : dumpRaw;
-  const { statFloor, peakMin, peakMax, dumpMin, dumpMax } = rarity;
+  const { midMin, midMax, peakMin, peakMax, dumpMin, dumpMax } = rarity;
   const stats = {};
   for (let i = 0; i < 5; i++) {
     let v;
     if      (i === peakIdx) { v = peakMin === peakMax ? peakMax : Math.floor(rng() * (peakMax - peakMin + 1)) + peakMin; }
     else if (i === dumpIdx) { v = Math.floor(rng() * (dumpMax - dumpMin + 1)) + dumpMin; }
-    else                    { v = Math.floor(rng() * (100 - statFloor + 1)) + statFloor; }
+    else                    { v = Math.floor(rng() * (midMax - midMin + 1)) + midMin; }
     stats[_FAMILIAR_STAT_NAMES[i]] = v;
   }
 
-  return { species, rarity: rarity.name, eye, hat, shiny, stats };
+  // Roll N+1, N+2: Name (syllable combiner — deterministic, runs after stats to preserve existing stat RNG)
+  const nameStart = _NAME_STARTS[Math.floor(rng() * _NAME_STARTS.length)];
+  const endBase   = Math.floor(rng() * _NAME_ENDS.length);
+  let name = nameStart + _NAME_ENDS[endBase];
+  // Rotate through remaining ends if blocklisted — no extra rng() calls, stays deterministic
+  for (let i = 1; i < _NAME_ENDS.length && _NAME_BLOCKLIST.has(name); i++) {
+    name = nameStart + _NAME_ENDS[(endBase + i) % _NAME_ENDS.length];
+  }
+
+  return { species, rarity: rarity.name, eye, hat, shiny, stats, name };
 }
 
 // ── Per-project hue assignment (ephemeral — resets on restart) ───────────────

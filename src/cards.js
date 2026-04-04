@@ -4,11 +4,15 @@ import { $, esc, showConfirm } from './dom.js';
 import { exitHistoryView } from './history.js';
 import {
   sessions, sessionLogs,
-  getActiveSessionId, setActiveSessionId, formatTokens, syncOmiSessions
+  getActiveSessionId, setActiveSessionId, formatTokens, syncOmiSessions,
+  rollFamiliarBones, incrementFamiliarReroll,
 } from './session.js';
 import { renderFrame } from './ascii-sprites.js';
 import { killSession, IDLE_STALE_MS } from './session-lifecycle.js';
 import { renderMessageLog, updateWorkingCursor, setPinToBottom } from './messages.js';
+
+// ── Re-roll gate — set > 0 to require tokens; 0 = open ───────────────────────
+const REROLL_TOKEN_COST = 0; // set > 0 to require tokens; 0 = gate open for testing
 
 // ── Familiar Profile Card ─────────────────────────────────
 
@@ -53,14 +57,19 @@ export function showFamiliarCard(sessionId) {
 
   const nameEl = document.createElement('div');
   nameEl.className = 'fc-species';
-  nameEl.textContent = f.species.toUpperCase();
+  nameEl.textContent = (f.name ?? f.species).toUpperCase();
 
   const rarityEl = document.createElement('div');
   rarityEl.className = 'fc-rarity';
   rarityEl.textContent = `${stars} ${f.rarity.toUpperCase()}`;
 
+  const typeEl = document.createElement('div');
+  typeEl.className = 'fc-type';
+  typeEl.textContent = `TYPE: ${f.species.toUpperCase()}`;
+
   header.appendChild(nameEl);
   header.appendChild(rarityEl);
+  header.appendChild(typeEl);
 
   // Body: 2-column (sprite | stats)
   const body = document.createElement('div');
@@ -136,9 +145,31 @@ export function showFamiliarCard(sessionId) {
   shinyBadge.textContent = '✦ SHINY';
   footer.appendChild(shinyBadge);
 
-  // Phase 3 slot: add re-roll button + credit display here (1-file change)
   const rerollSlot = document.createElement('div');
   rerollSlot.className = 'fc-reroll-slot';
+
+  const rerollBtn = document.createElement('button');
+  rerollBtn.className = 'fc-reroll-btn';
+  rerollBtn.textContent = REROLL_TOKEN_COST > 0 ? `RE-ROLL · ${formatTokens(REROLL_TOKEN_COST)}` : 'RE-ROLL';
+  rerollBtn.addEventListener('click', () => {
+    const s = sessions.get(sessionId);
+    if (!s) return;
+    if (REROLL_TOKEN_COST > 0 && (s.tokens ?? 0) < REROLL_TOKEN_COST) {
+      rerollBtn.classList.add('fc-reroll-btn--broke');
+      setTimeout(() => rerollBtn.classList.remove('fc-reroll-btn--broke'), 600);
+      return;
+    }
+    if (REROLL_TOKEN_COST > 0) s.tokens = Math.max(0, (s.tokens ?? 0) - REROLL_TOKEN_COST);
+    const count = incrementFamiliarReroll(s.cwd);
+    s.familiar = rollFamiliarBones(s.cwd, count);
+    // Refresh sidebar sprite
+    const wrap = document.getElementById(`card-sprite-wrap-${sessionId}`);
+    if (wrap) _buildSpriteWrap(wrap, sessionId);
+    // Reopen profile card with new familiar
+    hideFamiliarCard();
+    showFamiliarCard(sessionId);
+  });
+  rerollSlot.appendChild(rerollBtn);
   footer.appendChild(rerollSlot);
 
   // Assemble
@@ -211,23 +242,33 @@ export function renderSessionCard(id) {
 
   // Inject ASCII familiar + "about me" overlay into the sprite-wrap
   const wrap = document.getElementById(`card-sprite-wrap-${id}`);
-  if (wrap && s.familiar) {
-    wrap.style.setProperty('--familiar-hue', s.familiarHue ?? '#FFDD44');
-    const pre = document.createElement('pre');
-    pre.className = 'familiar-pre';
-    pre.dataset.species = s.familiar.species;
-    pre.textContent = renderFrame(s.familiar.species, 0, s.familiar.eye, s.familiar.hat).join('\n');
-    wrap.appendChild(pre);
+  if (wrap && s.familiar) _buildSpriteWrap(wrap, id);
+}
 
-    const viewBtn = document.createElement('button');
-    viewBtn.className = 'familiar-view-btn';
-    viewBtn.innerHTML = 'about<br>me';
-    viewBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      showFamiliarCard(id);
-    });
-    wrap.appendChild(viewBtn);
+function _buildSpriteWrap(wrap, id) {
+  const s = sessions.get(id);
+  if (!s?.familiar) return;
+  wrap.innerHTML = '';
+  wrap.style.setProperty('--familiar-hue', s.familiarHue ?? '#FFDD44');
+
+  const pre = document.createElement('pre');
+  pre.className = 'familiar-pre';
+  pre.dataset.species = s.familiar.species;
+  pre.textContent = renderFrame(s.familiar.species, 0, s.familiar.eye, s.familiar.hat).join('\n');
+  wrap.appendChild(pre);
+
+  if (s.familiar.name) {
+    const nameLabel = document.createElement('div');
+    nameLabel.className = 'familiar-name';
+    nameLabel.textContent = s.familiar.name.toUpperCase();
+    wrap.appendChild(nameLabel);
   }
+
+  const viewBtn = document.createElement('button');
+  viewBtn.className = 'familiar-view-btn';
+  viewBtn.innerHTML = 'about<br>me';
+  viewBtn.addEventListener('click', e => { e.stopPropagation(); showFamiliarCard(id); });
+  wrap.appendChild(viewBtn);
 }
 
 export function updateFamiliarDisplay(id, frameIdx) {
