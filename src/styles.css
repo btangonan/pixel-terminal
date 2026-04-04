@@ -354,7 +354,7 @@ body.no-session-active #empty-state { display: block; }
   flex-direction: column;
   flex: 1 1 40%;
   min-height: 0;
-  border: 1px solid color-mix(in srgb, var(--companion-hue, #CC7D5E) 45%, transparent);
+  border: 1px solid var(--border);
   overflow: hidden;
 }
 
@@ -966,7 +966,7 @@ canvas.sprite-canvas {
   outline: none;
   line-height: var(--lh-base);
 }
-#oracle-input:focus { border-color: var(--companion-hue, #CC7D5E); }
+#oracle-input:focus { border-color: var(--border); outline: none; }
 #oracle-send {
   background: transparent;
   border: 1px solid var(--border);
