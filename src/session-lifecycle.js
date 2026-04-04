@@ -360,9 +360,11 @@ async function sendMessage(id, text) {
 
   if (warnIfUnknownCommand(id, raw)) return;
 
-  if (!s.child || s.status === 'waiting') {
-    // Process still spawning, or status='waiting' means system/init hasn't fired yet
-    // (Claude hasn't finished loading --continue history). Queue until Ready.
+  if (!s.child) {
+    // Process still spawning — queue until Claude's stdin is ready.
+    // Claude 2.1.x does not emit system/init proactively; it emits it only after
+    // receiving the first stdin message. So messages sent after s.child is set go
+    // directly to Claude's stdin, which triggers system/init before Claude responds.
     // Don't _pushMessage yet — show it after "Ready" so log order is correct.
     s._pendingQueue.push(raw);
     _deps.setStatus(id, 'working'); // badge reacts immediately
