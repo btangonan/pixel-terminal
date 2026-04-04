@@ -701,7 +701,7 @@ canvas.sprite-canvas {
   padding: 0;
   white-space: pre;
   font-family: var(--font-mono);
-  color: var(--familiar-hue, #FFDD44);
+  color: var(--accent);
   user-select: none;
   text-align: center;
 }
