@@ -68,6 +68,11 @@ When the user's message starts with the companion's name (case-insensitive):
 
 For non-companion messages: respond normally as Claude.
 
+## 🪵 Live Debug Log
+`/tmp/pixel-terminal.log` — written by `launch.command` via `tee`. Contains all webview events, `pxLog` output, Vexil master commentary, and JS errors (unhandled rejections show here).
+
+**When debugging pixel-terminal: read this file first.** Don't ask "can I see the session?" — just `tail /tmp/pixel-terminal.log`.
+
 ## ⚡ Activation
 Read this file at session start.
 Announce: **Contract loaded. Using gemini-memory pixel_terminal.**
