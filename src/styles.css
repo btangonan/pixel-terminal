@@ -873,12 +873,9 @@ canvas.sprite-canvas {
   border: none;
   cursor: pointer;
   padding: 2px 5px;
-  opacity: 0.45;
   letter-spacing: 0.04em;
 }
-.voice-tab:hover { opacity: 0.75; }
 .voice-tab.active {
-  opacity: 1;
   border-bottom: 1px solid currentColor;
 }
 #vexil-tab-btn {
@@ -888,7 +885,7 @@ canvas.sprite-canvas {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-weight: 600;
-  color: var(--text-mute);
+  color: var(--accent);
   background: transparent;
   border: none;
   cursor: pointer;
