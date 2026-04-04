@@ -73,7 +73,6 @@ async function createSession(cwd, opts = {}) {
     _liveTokens: 0,
     _dotsPhase: 0,
     _pendingQueue: [],
-    _initialized: false,  // true only after system/init fires — gates sendMessage
     _perfHistory: [],     // rolling perf stats per turn
     _turnStart: null,     // timestamp when message sent to stdin
     _ttft: null,          // time to first token (ms)
@@ -113,9 +112,6 @@ async function spawnClaude(id) {
     if (s._modelOverride) claudeArgs.push('--model', s._modelOverride);
     if (s._effortOverride) claudeArgs.push('--effort', s._effortOverride);
     if (s._fallbackModel) claudeArgs.push('--fallback-model', s._fallbackModel);
-    // Reset before registering listeners — system/init can fire immediately after
-    // cmd.spawn() resolves; setting _initialized=false AFTER spawn would clobber it.
-    s._initialized = false;
     const cmd = Command.create('claude', claudeArgs, { cwd: s.cwd });
 
     let _buf = '';
@@ -161,7 +157,6 @@ async function spawnClaude(id) {
     const child = await cmd.spawn();
     s.child = child;
     s.toolPending = {};
-    // _initialized already reset above — do NOT reset here (init event may have already fired)
 
   } catch (err) {
     _deps.pushMessage(id, { type: 'error', text: `Failed to start Claude Code: ${err}` });
@@ -365,9 +360,9 @@ async function sendMessage(id, text) {
 
   if (warnIfUnknownCommand(id, raw)) return;
 
-  if (!s.child || !s._initialized) {
-    // Process still spawning or history not yet loaded (--continue reads JSONL on init).
-    // Queue until system/init fires — don't write to stdin before Claude has full context.
+  if (!s.child || s.status === 'waiting') {
+    // Process still spawning, or status='waiting' means system/init hasn't fired yet
+    // (Claude hasn't finished loading --continue history). Queue until Ready.
     // Don't _pushMessage yet — show it after "Ready" so log order is correct.
     s._pendingQueue.push(raw);
     _deps.setStatus(id, 'working'); // badge reacts immediately

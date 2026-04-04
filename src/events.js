@@ -364,7 +364,6 @@ export function handleEvent(id, event) {
         // Otherwise: don't clobber 'working' if user queued a message before init.
         if (s._restarting || s.status !== 'working') setStatus(id, 'idle');
         s._restarting = false;
-        s._initialized = true;  // Claude has loaded --continue history; direct sends now safe
         // Flush messages queued before Claude was ready.
         // pushMessage here so they appear AFTER "Ready" in the log.
         if (s._pendingQueue?.length && s.child) {
