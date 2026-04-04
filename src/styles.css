@@ -879,6 +879,10 @@ canvas.sprite-canvas {
 .voice-tab:hover { opacity: 0.8; }
 .voice-tab.active {
   opacity: 1;
+  color: var(--accent);
+  border-bottom: 1px solid var(--accent);
+}
+.voice-tab[data-vtab="vexil"].active {
   color: var(--companion-hue, #CC7D5E);
   border-bottom: 1px solid var(--companion-hue, #CC7D5E);
 }
