@@ -1437,7 +1437,7 @@ body.no-session-active #btn-new-session.plus-inverted {
    ══════════════════════════════════════════ */
 
 :root {
-  --companion-hue: #FF8C42;  /* overwritten at runtime from buddy.json */
+  --companion-hue: #CC7D5E;  /* overwritten at runtime from buddy.json */
 }
 
 .companion-wrap {
