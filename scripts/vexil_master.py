@@ -19,9 +19,7 @@ Cooldown: max 1 comment per 60 seconds globally.
 
 import json
 import os
-import queue
 import re
-import signal
 import time
 import collections
 import subprocess
@@ -119,64 +117,55 @@ def build_persona() -> str:
     )
 
 
-_CLAUDE_ENV_BLOCKLIST = {'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'ANTHROPIC_ISJEST'}
-
-def _spawn_oracle_process() -> Tuple[subprocess.Popen, queue.Queue]:
-    """Spawn a persistent claude oracle process. Returns (proc, text_queue)."""
-    # Strip Claude Code env vars — inherited CLAUDECODE=1 causes auth failure
-    # (claude CLI refuses to authenticate when invoked from within Claude Code)
-    env = {k: v for k, v in os.environ.items() if k not in _CLAUDE_ENV_BLOCKLIST}
-    proc = subprocess.Popen(
-        ['claude', '-p', '--bare', '--input-format', 'stream-json',
-         '--output-format', 'stream-json', '--verbose',
-         '--model', 'claude-sonnet-4-6'],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        cwd=str(Path.home()),
-        bufsize=0,
-        env=env,
-    )
-    text_queue: queue.Queue = queue.Queue()
-    threading.Thread(target=_oracle_reader_thread_fn, args=(proc, text_queue), daemon=True).start()
-    print('[vexil-master] oracle process spawned', flush=True)
-    return proc, text_queue
-
-
-def _oracle_reader_thread_fn(proc: subprocess.Popen, text_queue: queue.Queue) -> None:
-    """Read stream-json events from oracle stdout. Emits one text string per completed turn."""
-    current_text: list = []
-    for raw in proc.stdout:
-        raw = raw.decode(errors='replace').strip()
-        if not raw:
-            continue
-        try:
-            event = json.loads(raw)
-        except json.JSONDecodeError:
-            continue
-        etype = event.get('type')
-        if etype == 'content_block_delta':
-            delta = event.get('delta', {})
-            if delta.get('type') == 'text_delta':
-                current_text.append(delta.get('text', ''))
-        elif etype == 'assistant' and not current_text:
-            # Non-streaming fallback: collect from message content blocks
-            for block in (event.get('message', {}).get('content') or []):
-                if block.get('type') == 'text':
-                    current_text.append(block.get('text', ''))
-        elif etype == 'result':
-            # Use is_error flag — not text matching — to detect auth failure.
-            # Text matching caused false positives on legitimate responses
-            # mentioning "not logged in" in a session context.
-            if event.get('is_error'):
-                print('[vexil-master] oracle result is_error=true — auth failure', flush=True)
-                text_queue.put('__auth_error__')
-            else:
-                text = ''.join(current_text).strip()
-                text_queue.put(text if text else None)
-            current_text = []
-    # Process exited
-    text_queue.put(None)
+def call_claude_oracle(message: str, history: list, sessions: list = None, live_ctx: str = None) -> Optional[str]:
+    """Interactive ORACLE pre-session chat — per-query subprocess, same auth path as old oracle."""
+    buddy = load_buddy()
+    name  = buddy.get('name', 'Vexil')
+    if sessions:
+        sessions_str = '; '.join(f"{s.get('name')} ({s.get('cwd')})" for s in sessions)
+        context = (
+            f"You are {name}. You watch Claude Code sessions — tool calls, patterns, anomalies across all open sessions. "
+            f"Open sessions: {sessions_str}. "
+        )
+        if live_ctx:
+            context += f"Recent tool activity (last 5min):\n{live_ctx}\n"
+        context += (
+            "Only reference what you were explicitly told above. Do NOT invent git state or file details not listed. "
+            "1-2 sentences. No asterisk actions. No filler."
+        )
+    else:
+        context = (
+            f"You are {name}. You watch Claude Code sessions — tool calls, patterns, anomalies. "
+            "No sessions are open. You are blind. Cannot see project state, branches, or files. "
+            "Guide the user to press + (top of sidebar) to open a folder and start a session. "
+            "1-2 sentences max. No asterisk actions. No filler. No lists."
+        )
+    lines = [context, "", "--- Conversation ---"]
+    for turn in history:
+        role = "USER" if turn.get('role') == 'user' else name.upper()
+        lines.append(f"{role}: {turn.get('content', '')}")
+    lines.append(f"USER: {message}")
+    lines.append(f"{name.upper()}:")
+    full_prompt = "\n".join(lines)
+    model   = 'claude-sonnet-4-6' if sessions else 'claude-haiku-4-5-20251001'
+    timeout = 30 if sessions else 12
+    try:
+        result = subprocess.run(
+            ['claude', '-p', '--bare', '--model', model],
+            input=full_prompt,
+            capture_output=True, text=True, timeout=timeout,
+        )
+        if result.returncode != 0:
+            print(f'[vexil-master] oracle -p failed (rc={result.returncode}): {result.stderr[:200]}', flush=True)
+            return None
+        msg = result.stdout.strip()
+        return msg if msg else None
+    except subprocess.TimeoutExpired:
+        print(f'[vexil-master] oracle timed out ({timeout}s)', flush=True)
+        return None
+    except Exception as e:
+        print(f'[vexil-master] oracle error: {e}', flush=True)
+        return None
 
 
 def call_claude(prompt: str) -> Optional[str]:
@@ -373,28 +362,13 @@ def main() -> None:
     # Write startup signal so companion.js can detect daemon presence on poll
     append_out('\u22b8 online')
 
-    # ── Oracle persistent process (eager — warm before first query) ──────────
-    oracle_proc, oracle_queue = _spawn_oracle_process()
-
-    def _sigterm_handler(signum, frame):
-        if oracle_proc and oracle_proc.poll() is None:
-            oracle_proc.terminate()
-        raise SystemExit(0)
-    signal.signal(signal.SIGTERM, _sigterm_handler)
-
     _oracle_query_mtime: float = 0.0
     _oracle_busy: bool = False
     _commentary_busy: bool = False
 
     def _oracle_worker(query: dict) -> None:
-        nonlocal _oracle_busy, oracle_proc, oracle_queue
+        nonlocal _oracle_busy
         try:
-            # Health check — respawn if process died (e.g. after auth error + /login)
-            if oracle_proc.poll() is not None:
-                print('[vexil-master] oracle process dead — respawning', flush=True)
-                oracle_proc, oracle_queue = _spawn_oracle_process()
-
-            # Build context blob (same structure as former call_claude_oracle)
             _now = time.time()
             activity_lines = []
             for sid, acts in recent_activity.items():
@@ -403,43 +377,12 @@ def main() -> None:
                     summary = ', '.join(f"{tool}({hint})" if hint else tool for _, tool, hint in _recent[-4:])
                     activity_lines.append(f"  session {sid[:8]}: {summary}")
             live_ctx = '\n'.join(activity_lines) if activity_lines else None
-            sessions_list = query.get('sessions', [])
-            message = query.get('message', '')
-            buddy = load_buddy()
-            name = buddy.get('name', 'Vexil')
-            if sessions_list:
-                sessions_str = '; '.join(f"{s.get('name')} ({s.get('cwd')})" for s in sessions_list)
-                context = (
-                    f"You are {name}. You watch Claude Code sessions — tool calls, patterns, anomalies across all open sessions. "
-                    f"Open sessions: {sessions_str}. "
-                )
-                if live_ctx:
-                    context += f"Recent tool activity (last 5min):\n{live_ctx}\n"
-                context += (
-                    "Only reference what you were explicitly told above. Do NOT invent git state or file details not listed. "
-                    "1-2 sentences. No asterisk actions. No filler."
-                )
-            else:
-                context = (
-                    f"You are {name}. You watch Claude Code sessions — tool calls, patterns, anomalies. "
-                    "No sessions are open. You are blind. Cannot see project state, branches, or files. "
-                    "Guide the user to press + (top of sidebar) to open a folder and start a session. "
-                    "1-2 sentences max. No asterisk actions. No filler. No lists."
-                )
-            content = f"{context}\n\nUSER: {message}\n{name.upper()}:"
-            msg_line = json.dumps({'type': 'user', 'message': {'role': 'user', 'content': content}}) + '\n'
-            oracle_proc.stdin.write(msg_line.encode())
-            oracle_proc.stdin.flush()
-
-            # Wait for reader thread to emit response text (30s timeout)
-            try:
-                reply = oracle_queue.get(timeout=30)
-            except queue.Empty:
-                reply = None
-                print('[vexil-master] oracle timed out', flush=True)
-
-            if reply == '__auth_error__':
-                reply = 'Run `claude /login` in your terminal — oracle needs a fresh auth token. I\'ll reconnect automatically after.'
+            reply = call_claude_oracle(
+                query.get('message', ''),
+                query.get('history', []),
+                query.get('sessions', []),
+                live_ctx,
+            )
             if reply:
                 out_entry = json.dumps({
                     'type': 'oracle_response',

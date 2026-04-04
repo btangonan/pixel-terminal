@@ -214,7 +214,9 @@ function initOraclePreChat() {
 
   let _reqId = Date.now(); // timestamp-based start prevents cross-session req_id=1 collision
   let _pendingReqId  = null;
+  let _pendingMsg    = '';   // user message awaiting oracle response (for history)
   let _thinkingEl    = null;
+  let _history       = [];  // [{role, content}] rolling last 6
 
   function setVisible() {
     const show = _vexilTabActive;
@@ -242,12 +244,14 @@ function initOraclePreChat() {
 
     const reqId = ++_reqId;
     _pendingReqId = reqId;
+    _pendingMsg = text;
 
     try {
       await invoke('write_file_as_text', {
         path: ORACLE_QUERY_PATH,
         content: JSON.stringify({
           message: text,
+          history: _history.slice(-6),
           req_id: reqId,
           sessions: [...sessions.values()].map(s => ({ name: s.name, cwd: s.cwd })),
         }),
@@ -270,6 +274,10 @@ function initOraclePreChat() {
     el.innerHTML = `<span class="vexil-ts">[${ts}]</span>${escapeHtml(entry.msg)}`;
     _oracleChatLog?.appendChild(el);
     if (_oracleChatLog) _oracleChatLog.scrollTop = _oracleChatLog.scrollHeight;
+
+    _history.push({ role: 'user', content: _pendingMsg });
+    _history.push({ role: 'oracle', content: entry.msg });
+    if (_history.length > 6) _history = _history.slice(-6);
   });
 
   input.addEventListener('keydown', (e) => {
