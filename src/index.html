@@ -12,7 +12,6 @@
 </head>
 <body>
   <div id="drag-region" data-tauri-drag-region>
-    <img src="asky_logo.png" id="app-title-img" alt="ASKY" />
   </div>
   <div id="about-overlay" class="hidden">
     <div id="about-box">
@@ -107,7 +106,15 @@
         </div>
 
         <div id="message-log">
-          <div id="empty-state">no active sessions<br>press + to open a folder</div>
+          <pre id="app-title-pre">              _
+             (_)
+   __ _ _ __  _ _ __ ___   __ _
+  / _` | '_ \| | '_ ` _ \ / _` |
+ | (_| | | | | | | | | | | (_| |
+  \__,_|_| |_|_|_| |_| |_|\__,_|</pre>
+          <div id="empty-state">
+            <div id="empty-state-text">no active sessions<br>press + to open a folder</div>
+          </div>
         </div>
 
         <div id="drop-indicator" class="hidden">drop files to attach</div>

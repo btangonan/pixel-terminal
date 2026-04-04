@@ -129,17 +129,6 @@ body {
   border-bottom: 1px solid var(--border);
 }
 #sidebar-header .pixel-label { color: var(--accent); }
-#app-title-img {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  height: 15px;
-  width: auto;
-  image-rendering: pixelated;
-  pointer-events: none;
-  user-select: none;
-}
 #btn-new-session {
   background: transparent;
   border: none;
@@ -331,20 +320,44 @@ body {
   gap: 3px;
   position: relative;
 }
-#empty-state {
+/* Logo — always in DOM, always at the same position, opacity toggles per state */
+#app-title-pre {
   position: absolute;
-  top: 50%;
-  left: 50%;
+  top: calc(50% - 40px);
+  left: calc(50% - 7px);
   transform: translate(-50%, -50%);
-  color: var(--text-mid);
-  font-size: var(--fs-lg);
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: #cc7d5e;
+  white-space: pre;
+  opacity: 0.20;
   pointer-events: none;
   user-select: none;
-  text-align: center;
-  opacity: 0.65;
+}
+body.no-session-active #app-title-pre { opacity: 0.7; }
+
+/* Empty state text — sits below the logo */
+#empty-state {
+  position: absolute;
+  top: calc(50% + 25px);
+  left: 50%;
+  transform: translateX(-50%);
   display: none;
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
 }
 body.no-session-active #empty-state { display: block; }
+#empty-state-text {
+  color: var(--text-mid);
+  font-size: var(--fs-lg);
+  text-align: center;
+  opacity: 0.65;
+}
 #message-log::-webkit-scrollbar { width: 3px; }
 #message-log::-webkit-scrollbar-track { background: transparent; }
 #message-log::-webkit-scrollbar-thumb { background: var(--border-hi); }
