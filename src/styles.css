@@ -882,7 +882,7 @@ canvas.sprite-canvas {
   color: var(--accent);
   border-bottom: 1px solid var(--accent);
 }
-.voice-tab[data-vtab="vexil"].active {
+#vexil-tab-btn.active {
   color: var(--companion-hue, #CC7D5E);
   border-bottom: 1px solid var(--companion-hue, #CC7D5E);
 }
