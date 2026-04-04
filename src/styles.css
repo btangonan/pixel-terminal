@@ -868,23 +868,21 @@ canvas.sprite-canvas {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-weight: 600;
-  color: var(--text-mute);
+  color: var(--accent);
   background: transparent;
   border: none;
   cursor: pointer;
   padding: 2px 5px;
-  opacity: 0.5;
+  opacity: 0.45;
   letter-spacing: 0.04em;
 }
-.voice-tab:hover { opacity: 0.8; }
+.voice-tab:hover { opacity: 0.75; }
 .voice-tab.active {
   opacity: 1;
-  color: var(--accent);
-  border-bottom: 1px solid var(--accent);
+  border-bottom: 1px solid currentColor;
 }
-#vexil-tab-btn.active {
+#vexil-tab-btn {
   color: var(--companion-hue, #CC7D5E);
-  border-bottom: 1px solid var(--companion-hue, #CC7D5E);
 }
 #btn-clear-voice-log {
   font-family: var(--font-mono);
