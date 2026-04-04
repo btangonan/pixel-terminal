@@ -1,5 +1,5 @@
 # pixel-terminal — System Architecture
-**Last updated**: 2026-03-30
+**Last updated**: 2026-04-04
 
 ---
 
@@ -125,6 +125,66 @@ API tokens → CLI stdout → PTY → terminal emulator → screen (~0ms overhea
 ```
 
 IPC overhead: ~1-5ms per chunk, imperceptible at 50-100 tokens/sec. Perceptual parity achieved.
+
+---
+
+## Oracle (Pre-Session Chat)
+
+A persistent `claude` subprocess that handles the Vexil chat bubble before any session is open. Spawned once at `vexil_master.py` startup — stays alive all day.
+
+### Why persistent
+Previous design called `subprocess.run(['claude', '-p', ...])` per query — 5–10s cold start every time. Persistent process amortizes startup cost: first response ~2–3s, subsequent ~1–2s (API latency only).
+
+### Spawn args (`vexil_master.py: _spawn_oracle_process`)
+```python
+['claude', '--bare',                       # strip Claude Code system prompt
+ '--input-format',  'stream-json',
+ '--output-format', 'stream-json',
+ '--verbose',                              # needed to receive content_block_delta events
+ '--permission-mode', 'bypassPermissions',
+ '--model', 'claude-sonnet-4-6']
+# cwd = Path.home() — no file tools needed
+```
+
+**`--bare` is required.** Without it, the default Claude Code system prompt bleeds into oracle responses, overriding the Vexil persona.
+
+### Message flow
+```
+voice.js submit()
+  → invoke('write_file_as_text', ORACLE_QUERY_PATH)   # write query JSON to /tmp/oracle_query.json
+
+vexil_master.py main loop (1s poll)
+  → detects oracle_query.json mtime change
+  → spawns _oracle_worker thread (non-blocking)
+    → builds context blob (persona + sessions + live_ctx)
+    → stdin.write({"type":"user","message":{"role":"user","content":"..."}}\n)
+    → stdin.flush()
+    → oracle_reader_thread accumulates content_block_delta text
+    → result event fires → text_queue.put(reply)
+    → _oracle_worker reads from queue (30s timeout)
+    → appends {"type":"oracle_response", "req_id":..., "msg":...} to OUT_PATH
+
+companion.js pollMasterOut() (1.5s poll)
+  → reads new lines from vexil_master_out.jsonl
+  → routes oracle_response entries to voice.js listener
+  → voice.js renders reply in oracle chat log
+```
+
+### Token accumulation behavior
+The persistent process holds conversation history natively — context window grows with each exchange. Cost per query increases over a long session. Resets on daemon restart or process crash (health check in main loop auto-respawns).
+
+| Condition | Token cost |
+|-----------|-----------|
+| Query 1–3 | ~400–600 input tokens |
+| Query 10+ | grows as history accumulates |
+| Process respawn | resets to baseline |
+
+**No-sessions path** always uses `claude-sonnet-4-6` (previous design used Haiku when no sessions open — cost regression accepted for architectural simplicity).
+
+### Cross-references
+- `scripts/vexil_master.py` — `_spawn_oracle_process()`, `_oracle_reader_thread_fn()`, `_oracle_worker()`
+- `src/voice.js` — `initOraclePreChat()`, `ORACLE_QUERY_PATH`, oracle response listener
+- `src/companion.js` — `pollMasterOut()`, oracle_response routing
 
 ---
 
