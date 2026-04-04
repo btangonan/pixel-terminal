@@ -51,7 +51,7 @@ end tell
 EOF
 
 # Print JS fingerprint so we can confirm new code is loaded
-JS_HASH=$(cat src/companion.js src/voice.js src/session-lifecycle.js src/index.html src/styles.css | shasum -a 256 | cut -c1-8)
+JS_HASH=$(cat src/companion.js src/voice.js src/session-lifecycle.js src/session.js src/cards.js src/history.js src/app.js src/index.html src/styles.css | shasum -a 256 | cut -c1-8)
 echo "┌─────────────────────────────────────┐"
 echo "│ pixel-terminal launching            │"
 echo "│ JS fingerprint: $JS_HASH            │"
