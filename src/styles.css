@@ -138,6 +138,8 @@ body {
   image-rendering: pixelated;
   pointer-events: none;
   user-select: none;
+  /* Recolor logo to match ascii art yellow */
+  filter: hue-rotate(32deg) saturate(1.4) brightness(1.1);
 }
 #btn-new-session {
   background: transparent;
@@ -1098,7 +1100,7 @@ canvas.sprite-canvas {
 #session-prompt {
   position: fixed;
   z-index: 500;
-  background: var(--logo-orange);
+  background: var(--companion-hue, #FFDD44);
   padding: 28px 18px 28px;
   font-family: var(--font);
   box-sizing: border-box;
@@ -1164,14 +1166,14 @@ canvas.sprite-canvas {
 #session-prompt-got-it:hover { background: rgba(0,0,0,0.1); }
 
 body.no-session-active #btn-new-session {
-  color: var(--logo-orange);
+  color: var(--companion-hue, #FFDD44);
   opacity: 1;
   background: transparent;
 }
 body.no-session-active #btn-new-session.plus-inverted {
   color: #000;
   border-color: #000;
-  background: var(--logo-orange);
+  background: var(--companion-hue, #FFDD44);
 }
 
 /* ── Attachment context menu ──────────── */
