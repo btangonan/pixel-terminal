@@ -122,7 +122,7 @@ def build_persona() -> str:
 def _spawn_oracle_process() -> Tuple[subprocess.Popen, queue.Queue]:
     """Spawn a persistent claude oracle process. Returns (proc, text_queue)."""
     proc = subprocess.Popen(
-        ['claude', '--bare', '--input-format', 'stream-json',
+        ['claude', '-p', '--bare', '--input-format', 'stream-json',
          '--output-format', 'stream-json', '--verbose',
          '--permission-mode', 'bypassPermissions',
          '--model', 'claude-sonnet-4-6'],
