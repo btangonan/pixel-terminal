@@ -222,27 +222,53 @@ function showRerollConfirm(sessionId) {
   const dialog = document.createElement('div');
   dialog.className = 'fc-confirm';
 
-  dialog.innerHTML = `
-    <div class="fc-confirm-title">RE-ROLL FAMILIAR?</div>
-    <div class="fc-confirm-rows">
-      <div class="fc-confirm-row">
-        <span class="fc-confirm-label">COST</span>
-        <span class="fc-confirm-val">${cost} @NIM@</span>
-      </div>
-      <div class="fc-confirm-row">
-        <span class="fc-confirm-label">YOUR BALANCE</span>
-        <span class="fc-confirm-val">${bal} @NIM@</span>
-      </div>
-    </div>
-    <div class="fc-confirm-warning">Your current familiar will be lost forever.</div>
-    <div class="fc-confirm-actions">
-      <button class="fc-confirm-btn fc-confirm-btn--go">CONFIRM RE-ROLL</button>
-      <button class="fc-confirm-btn fc-confirm-btn--cancel">CANCEL</button>
-    </div>
-  `;
+  const _title = document.createElement('div');
+  _title.className = 'fc-confirm-title';
+  _title.textContent = 'RE-ROLL FAMILIAR?';
 
-  dialog.querySelector('.fc-confirm-btn--cancel').addEventListener('click', _hideRerollConfirm);
-  dialog.querySelector('.fc-confirm-btn--go').addEventListener('click', () => {
+  const _rows = document.createElement('div');
+  _rows.className = 'fc-confirm-rows';
+
+  const _costRow = document.createElement('div');
+  _costRow.className = 'fc-confirm-row';
+  const _costLabel = document.createElement('span');
+  _costLabel.className = 'fc-confirm-label';
+  _costLabel.textContent = 'COST';
+  const _costVal = document.createElement('span');
+  _costVal.className = 'fc-confirm-val';
+  _costVal.textContent = `${cost} @NIM@`;
+  _costRow.append(_costLabel, _costVal);
+
+  const _balRow = document.createElement('div');
+  _balRow.className = 'fc-confirm-row';
+  const _balLabel = document.createElement('span');
+  _balLabel.className = 'fc-confirm-label';
+  _balLabel.textContent = 'YOUR BALANCE';
+  const _balVal = document.createElement('span');
+  _balVal.className = 'fc-confirm-val';
+  _balVal.textContent = `${bal} @NIM@`;
+  _balRow.append(_balLabel, _balVal);
+
+  _rows.append(_costRow, _balRow);
+
+  const _warning = document.createElement('div');
+  _warning.className = 'fc-confirm-warning';
+  _warning.textContent = 'Your current familiar will be lost forever.';
+
+  const _actions = document.createElement('div');
+  _actions.className = 'fc-confirm-actions';
+  const _goBtn = document.createElement('button');
+  _goBtn.className = 'fc-confirm-btn fc-confirm-btn--go';
+  _goBtn.textContent = 'CONFIRM RE-ROLL';
+  const _cancelBtn = document.createElement('button');
+  _cancelBtn.className = 'fc-confirm-btn fc-confirm-btn--cancel';
+  _cancelBtn.textContent = 'CANCEL';
+  _actions.append(_goBtn, _cancelBtn);
+
+  dialog.append(_title, _rows, _warning, _actions);
+
+  _cancelBtn.addEventListener('click', _hideRerollConfirm);
+  _goBtn.addEventListener('click', () => {
     if (!spendNim(cost)) return; // double-check (balance may have changed)
     const s = sessions.get(sessionId);
     if (!s) { _hideRerollConfirm(); return; }

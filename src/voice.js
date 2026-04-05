@@ -205,7 +205,7 @@ function resolveSession(ref) {
 }
 
 // ── Oracle pre-session chat ────────────────────────────────
-const ORACLE_QUERY_PATH = '/tmp/oracle_query.json';
+const ORACLE_QUERY_PATH = '~/.local/share/pixel-terminal/oracle_query.json';
 
 function initOraclePreChat() {
   const wrap  = $.oraclePreChat;

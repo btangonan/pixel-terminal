@@ -1,5 +1,7 @@
+use std::collections::HashSet;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
+use std::sync::Mutex;
 extern crate libc;
 
 use tauri::{
@@ -9,6 +11,64 @@ use tauri::{
 
 mod ws_bridge;
 use ws_bridge::{get_voice_status, ptt_release, ptt_start, set_omi_listening, set_voice_mode, switch_voice_source, sync_omi_sessions};
+
+/// Tauri State: set of child PIDs this app has spawned. Used to restrict send_signal.
+struct SpawnedPids(Mutex<HashSet<u32>>);
+
+/// Validate and expand a path for use in IPC file commands.
+/// Expands leading `~/`. Enforces a strict allowlist of paths the app
+/// legitimately accesses — everything else is rejected.
+///
+/// Allowed prefixes (directories):
+///   ~/Projects/                          — project files, attachment reads
+///   ~/.config/pixel-terminal/            — buddy.json, project-chars.json
+///   ~/.local/share/pixel-terminal/       — vexil_feed.jsonl, oracle_query.json
+///   /tmp/                                — vexil IPC files, hook gate, alive marker
+///
+/// Allowed exact paths:
+///   ~/.claude.json                       — companion reads Claude config
+fn expand_and_validate_path(path: &str) -> Result<std::path::PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME env not set".to_string())?;
+
+    // Block obvious traversal sequences before expansion
+    if path.contains("/../") || path.ends_with("/..") || path.starts_with("../") {
+        return Err("Path traversal not allowed".to_string());
+    }
+
+    // Expand leading ~/
+    let expanded = if path.starts_with("~/") {
+        format!("{}/{}", home, &path[2..])
+    } else if path == "~" {
+        home.clone()
+    } else {
+        path.to_string()
+    };
+
+    // Require absolute path after expansion
+    if !expanded.starts_with('/') {
+        return Err("Relative paths not allowed".to_string());
+    }
+
+    // Strict allowlist — only paths the app has legitimate business accessing
+    let allowed_dirs = [
+        format!("{}/Projects/", home),
+        format!("{}/.config/pixel-terminal/", home),
+        format!("{}/.local/share/pixel-terminal/", home),
+    ];
+    let allowed_exact = [
+        format!("{}/.claude.json", home),
+    ];
+
+    let in_allowed_dir = allowed_dirs.iter().any(|d| expanded.starts_with(d.as_str()));
+    let is_allowed_exact = allowed_exact.iter().any(|e| expanded == e.as_str());
+    let in_tmp = expanded.starts_with("/tmp/");
+
+    if !in_allowed_dir && !is_allowed_exact && !in_tmp {
+        return Err(format!("Path outside allowed prefixes: {}", path));
+    }
+
+    Ok(std::path::PathBuf::from(expanded))
+}
 
 #[derive(serde::Serialize)]
 struct SlashCommand {
@@ -30,32 +90,39 @@ fn strip_frontmatter(content: &str) -> String {
 /// Read a file as a base64-encoded string (for images/binary).
 #[tauri::command]
 fn read_file_as_base64(path: String) -> Result<String, String> {
-    let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+    let safe = expand_and_validate_path(&path)?;
+    let bytes = fs::read(&safe).map_err(|e| e.to_string())?;
     Ok(encode_base64(&bytes))
 }
 
 /// Read a file as UTF-8 text.
 #[tauri::command]
 fn read_file_as_text(path: String) -> Result<String, String> {
-    fs::read_to_string(&path).map_err(|e| e.to_string())
+    let safe = expand_and_validate_path(&path)?;
+    fs::read_to_string(&safe).map_err(|e| e.to_string())
 }
 
 /// Write UTF-8 text to a file (creates parent dirs if needed).
 #[tauri::command]
 fn write_file_as_text(path: String, content: String) -> Result<(), String> {
-    if let Some(parent) = std::path::Path::new(&path).parent() {
+    let safe = expand_and_validate_path(&path)?;
+    if let Some(parent) = safe.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    fs::write(&path, content.as_bytes()).map_err(|e| e.to_string())
+    fs::write(&safe, content.as_bytes()).map_err(|e| e.to_string())
 }
 
 /// Atomically append a single line to a file (O_APPEND — safe for concurrent writers).
 #[tauri::command]
 fn append_line_to_file(path: String, line: String) -> Result<(), String> {
+    let safe = expand_and_validate_path(&path)?;
+    if let Some(parent) = safe.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&path)
+        .open(&safe)
         .map_err(|e| e.to_string())?;
     writeln!(file, "{}", line).map_err(|e| e.to_string())
 }
@@ -203,7 +270,7 @@ struct SessionHistoryEntry {
     message_count: Option<u32>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug)]
 struct SessionHistoryMessage {
     msg_type: String,
     text: Option<String>,
@@ -397,8 +464,19 @@ fn regex_strip_xml_tags(text: &str) -> String {
 }
 
 /// Fully parse a JSONL session file and return structured messages for rendering.
+/// Restricted to files under ~/.claude/projects/ — the only legitimate source of session files.
 #[tauri::command]
 async fn load_session_history(file_path: String) -> Result<Vec<SessionHistoryMessage>, String> {
+    // Validate before spawning — reject arbitrary paths from webview JS
+    let home = std::env::var("HOME").map_err(|_| "HOME env not set".to_string())?;
+    let allowed_prefix = format!("{}/.claude/projects/", home);
+    if file_path.contains("/../") || file_path.ends_with("/..") {
+        return Err("Path traversal not allowed".to_string());
+    }
+    if !file_path.starts_with(&allowed_prefix) {
+        return Err("Session files must be under ~/.claude/projects/".to_string());
+    }
+
     tokio::task::spawn_blocking(move || {
         let file = fs::File::open(&file_path).map_err(|e| e.to_string())?;
         let reader = BufReader::new(file);
@@ -482,10 +560,33 @@ async fn load_session_history(file_path: String) -> Result<Vec<SessionHistoryMes
     .map_err(|e| e.to_string())?
 }
 
-/// Send a POSIX signal to a process by PID. Used to send SIGINT (2) to Claude
-/// Code to cancel the current turn without killing the process.
+/// Register a child PID that this app has spawned. Required before send_signal accepts it.
 #[tauri::command]
-fn send_signal(pid: u32, signal: i32) -> Result<(), String> {
+fn register_child_pid(state: tauri::State<SpawnedPids>, pid: u32) {
+    state.0.lock().unwrap().insert(pid);
+}
+
+/// Unregister a child PID (call when the child exits).
+#[tauri::command]
+fn unregister_child_pid(state: tauri::State<SpawnedPids>, pid: u32) {
+    state.0.lock().unwrap().remove(&pid);
+}
+
+/// Send a POSIX signal to a process by PID.
+/// Restricted to PIDs registered via register_child_pid (must be a child this app spawned).
+/// Only SIGINT (2) and SIGTERM (15) are accepted.
+#[tauri::command]
+fn send_signal(state: tauri::State<SpawnedPids>, pid: u32, signal: i32) -> Result<(), String> {
+    const ALLOWED_SIGNALS: [i32; 2] = [2, 15]; // SIGINT, SIGTERM
+    if !ALLOWED_SIGNALS.contains(&signal) {
+        return Err(format!("Signal {} not allowed (permitted: SIGINT=2, SIGTERM=15)", signal));
+    }
+    {
+        let pids = state.0.lock().unwrap();
+        if !pids.contains(&pid) {
+            return Err(format!("PID {} is not a registered child process", pid));
+        }
+    }
     let ret = unsafe { libc::kill(pid as i32, signal) };
     if ret == 0 {
         Ok(())
@@ -503,39 +604,12 @@ fn js_log(msg: String) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(SpawnedPids(Mutex::new(HashSet::new())))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             ws_bridge::init(app)?;
-
-            // Set dock/Cmd+Tab icon programmatically via NSApplication —
-            // `tauri dev` runs the bare binary, not the .app bundle,
-            // so macOS doesn't read the bundled .icns for dock display.
-            #[cfg(target_os = "macos")]
-            {
-                use cocoa::appkit::NSImage;
-                use cocoa::base::nil;
-                use cocoa::foundation::{NSData, NSSize};
-                use objc::runtime::Object;
-                use objc::*;
-                let icon_bytes: &[u8] = include_bytes!("../icons/icon_master_1024_rounded.png");
-                unsafe {
-                    let ns_data = NSData::dataWithBytes_length_(
-                        nil,
-                        icon_bytes.as_ptr() as *const std::ffi::c_void,
-                        icon_bytes.len() as u64,
-                    );
-                    let ns_image: *mut Object = msg_send![class!(NSImage), alloc];
-                    let ns_image: *mut Object = msg_send![ns_image, initWithData: ns_data];
-                    // Set size in points so macOS treats it as a proper app icon
-                    // and applies the squircle mask in Cmd+Tab / Dock.
-                    let size = NSSize::new(512.0, 512.0);
-                    let _: () = msg_send![ns_image, setSize: size];
-                    let ns_app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
-                    let _: () = msg_send![ns_app, setApplicationIconImage: ns_image];
-                }
-            }
 
             // Custom menu — replaces "About pixel-terminal" with "About Pixel Claude"
             // and intercepts the About action to show our styled dialog.
@@ -592,11 +666,197 @@ pub fn run() {
             get_voice_status,
             scan_session_history,
             load_session_history,
+            register_child_pid,
+            unregister_child_pid,
             send_signal,
             js_log,
             write_file_as_text,
             append_line_to_file
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| {
+            // Set dock icon in Ready — runs AFTER Tauri's internal setApplicationIconImage
+            // (tauri-2/src/app.rs RuntimeRunEvent::Ready), so our contentView wins.
+            if let tauri::RunEvent::Ready = event {
+                #[cfg(target_os = "macos")]
+                set_squircle_dock_icon();
+            }
+        });
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_path_traversal_blocked() {
+        let result = expand_and_validate_path("../../../etc/passwd");
+        assert!(result.is_err(), "path traversal should be rejected");
+        let msg = result.unwrap_err();
+        assert!(msg.contains("traversal") || msg.contains("Relative"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_system_path_blocked() {
+        let result = expand_and_validate_path("/etc/passwd");
+        assert!(result.is_err(), "system path should be rejected");
+    }
+
+    #[test]
+    fn test_home_root_blocked() {
+        // ~/some-file at home root (not in an allowed subdir) should be rejected
+        let result = expand_and_validate_path("~/secret.txt");
+        assert!(result.is_err(), "home-root file outside allowlist should be rejected");
+    }
+
+    #[test]
+    fn test_ssh_key_blocked() {
+        let result = expand_and_validate_path("~/.ssh/id_rsa");
+        assert!(result.is_err(), "~/.ssh/ should be rejected");
+    }
+
+    #[test]
+    fn test_config_pixel_terminal_allowed() {
+        let result = expand_and_validate_path("~/.config/pixel-terminal/buddy.json");
+        assert!(result.is_ok(), "~/.config/pixel-terminal/ should be allowed: {:?}", result);
+    }
+
+    #[test]
+    fn test_local_share_pixel_terminal_allowed() {
+        let result = expand_and_validate_path("~/.local/share/pixel-terminal/vexil_feed.jsonl");
+        assert!(result.is_ok(), "~/.local/share/pixel-terminal/ should be allowed: {:?}", result);
+    }
+
+    #[test]
+    fn test_projects_allowed() {
+        let result = expand_and_validate_path("~/Projects/my-project/file.txt");
+        assert!(result.is_ok(), "~/Projects/ should be allowed: {:?}", result);
+    }
+
+    #[test]
+    fn test_tmp_allowed() {
+        let result = expand_and_validate_path("/tmp/pixel_terminal_alive");
+        assert!(result.is_ok(), "/tmp/ should be allowed: {:?}", result);
+    }
+
+    #[test]
+    fn test_claude_json_exact_allowed() {
+        let result = expand_and_validate_path("~/.claude.json");
+        assert!(result.is_ok(), "~/.claude.json exact path should be allowed: {:?}", result);
+    }
+
+    #[test]
+    fn test_write_file_rejects_system_path() {
+        let result = write_file_as_text("/etc/hosts".to_string(), "evil".to_string());
+        assert!(result.is_err(), "writes outside allowed paths should be rejected");
+    }
+
+    #[test]
+    fn test_read_file_rejects_traversal() {
+        let result = read_file_as_text("../../../etc/passwd".to_string());
+        assert!(result.is_err(), "path traversal should be rejected by read_file_as_text");
+    }
+
+    #[test]
+    fn test_absolute_home_path_blocked() {
+        // Construct a path like /Users/foo/Desktop — not in allowlist
+        let home = std::env::var("HOME").unwrap_or_default();
+        let path = format!("{}/Desktop/evil.txt", home);
+        let result = expand_and_validate_path(&path);
+        assert!(result.is_err(), "~/Desktop/ should be rejected: {:?}", result);
+    }
+
+    // load_session_history path validation
+    #[tokio::test]
+    async fn test_load_session_history_rejects_arbitrary_path() {
+        let result = load_session_history("/etc/passwd".to_string()).await;
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("~/.claude/projects/"), "got: {}", msg);
+    }
+
+    #[tokio::test]
+    async fn test_load_session_history_rejects_traversal() {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let path = format!("{}/.claude/projects/../../../etc/passwd", home);
+        let result = load_session_history(path).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_load_session_history_accepts_valid_project_path() {
+        let home = std::env::var("HOME").unwrap_or_default();
+        // Valid prefix — will fail with file-not-found, NOT a path rejection error
+        let path = format!("{}/.claude/projects/test-project/abc123.jsonl", home);
+        let result = load_session_history(path).await;
+        // Should be an IO error (file not found), not a path validation rejection
+        if let Err(e) = &result {
+            assert!(!e.contains("~/.claude/projects/"), "unexpected path rejection: {}", e);
+        }
+    }
+}
+
+/// ─── DOCK ICON — READ BEFORE TOUCHING ────────────────────────────────────────
+///
+/// WHY THIS IS IN run() AND NOT setup():
+///   Tauri v2 calls setApplicationIconImage() internally on RuntimeRunEvent::Ready,
+///   which fires AFTER setup(). Anything set in setup() is silently overridden.
+///   This function must be called from RunEvent::Ready in the app.run() callback.
+///
+/// WHY NSDockTile.contentView (NOT setApplicationIconImage):
+///   setApplicationIconImage composites the image on an opaque background,
+///   stripping alpha transparency → transparent-corner PNGs render as squares.
+///   contentView renders an NSView directly, preserving alpha.
+///
+/// WHY icon_master_1024_rounded.png (NOT icon_master_1024.png):
+///   NSDockTile.contentView BYPASSES macOS 26 Tahoe squircle enforcement.
+///   The system does NOT apply its squircle mask to contentView content.
+///   The squircle must be pre-baked into the PNG (transparent corners).
+///   icon_master_1024.png is the flat square — wrong file for this path.
+///
+/// AFTER CHANGING THE PNG: touch src-tauri/src/lib.rs before rebuilding.
+///   include_bytes! is resolved at compile time; cargo won't recompile if only
+///   the PNG changed. Skipping the touch = old icon bytes silently re-used.
+///
+/// See CLAUDE.md §"Dock Icon System" for full context.
+/// ─────────────────────────────────────────────────────────────────────────────
+#[cfg(target_os = "macos")]
+fn set_squircle_dock_icon() {
+    use cocoa::appkit::NSImage;
+    use cocoa::base::nil;
+    use cocoa::foundation::{NSData, NSPoint, NSRect, NSSize};
+    use objc::runtime::Object;
+    use objc::*;
+
+    // Pre-baked squircle PNG — transparent corners. NSImageView preserves alpha;
+    // setApplicationIconImage composites opaquely and loses it.
+    let icon_bytes: &[u8] = include_bytes!("../icons/icon_master_1024_rounded.png");
+
+    unsafe {
+        let ns_data = NSData::dataWithBytes_length_(
+            nil,
+            icon_bytes.as_ptr() as *const std::ffi::c_void,
+            icon_bytes.len() as u64,
+        );
+        let ns_image: *mut Object = msg_send![class!(NSImage), alloc];
+        let ns_image: *mut Object = msg_send![ns_image, initWithData: ns_data];
+        let _: () = msg_send![ns_image, setSize: NSSize::new(1024.0, 1024.0)];
+
+        let ns_app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
+        let dock_tile: *mut Object = msg_send![ns_app, dockTile];
+
+        let frame = NSRect {
+            origin: NSPoint { x: 0.0, y: 0.0 },
+            size: NSSize { width: 128.0, height: 128.0 },
+        };
+        let image_view: *mut Object = msg_send![class!(NSImageView), alloc];
+        let image_view: *mut Object = msg_send![image_view, initWithFrame: frame];
+        let _: () = msg_send![image_view, setImageScaling: 3u64]; // NSImageScaleProportionallyUpOrDown
+        let _: () = msg_send![image_view, setImage: ns_image];
+        let _: () = msg_send![dock_tile, setContentView: image_view];
+        let _: () = msg_send![dock_tile, display];
+    }
 }

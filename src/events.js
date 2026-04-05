@@ -9,7 +9,7 @@ import { addToVexilLog, getBuddyTrigger, triggerAsciiAction } from './companion.
 import { accrueNimForSession } from './nim.js';
 
 // ── Vexil Master feed (proactive cross-session commentary) ──────────────
-const VEXIL_FEED_PATH = '/tmp/vexil_feed.jsonl';
+const VEXIL_FEED_PATH = '~/.local/share/pixel-terminal/vexil_feed.jsonl';
 function appendVexilFeed(entry) {
   const line = JSON.stringify({ ...entry, ts: Date.now() });
   window.__TAURI__?.core?.invoke('append_line_to_file', { path: VEXIL_FEED_PATH, line }).catch(() => {});

@@ -26,9 +26,10 @@ import threading
 from pathlib import Path
 from typing import Optional, Tuple, Dict
 
-FEED_PATH            = '/tmp/vexil_feed.jsonl'
-OUT_PATH             = '/tmp/vexil_master_out.jsonl'
-ORACLE_QUERY_PATH    = '/tmp/oracle_query.json'
+_DATA_DIR            = Path.home() / '.local' / 'share' / 'pixel-terminal'
+FEED_PATH            = str(_DATA_DIR / 'vexil_feed.jsonl')
+OUT_PATH             = str(_DATA_DIR / 'vexil_master_out.jsonl')
+ORACLE_QUERY_PATH    = str(_DATA_DIR / 'oracle_query.json')
 POLL_INTERVAL        = 1.0
 COOLDOWN             = 60.0   # global cooldown for anomaly triggers (retry, etc.)
 TURN_COOLDOWN        = 20.0   # per-session cooldown for turn_complete commentary
@@ -319,9 +320,15 @@ def _reporting_mode() -> str:
 
 
 def main() -> None:
+    # Ensure runtime data directory exists (safe from /tmp symlink attacks)
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+
     feed_offset: int = 0
     last_comment_ts: float = 0.0
     tool_errors: Dict[str, list] = {}
+
+    # Lock protecting recent_activity — accessed by main loop and oracle worker thread
+    _activity_lock = threading.Lock()
 
     # Per-session tool sequence: {session_id: deque of (timestamp, tool_name)}
     # Max 20 entries per session — enough for pattern detection, bounded memory
@@ -361,7 +368,9 @@ def main() -> None:
         try:
             _now = time.time()
             activity_lines = []
-            for sid, acts in recent_activity.items():
+            with _activity_lock:
+                _activity_snapshot = list(recent_activity.items())
+            for sid, acts in _activity_snapshot:
                 _recent = [(t, tool, hint) for (t, tool, hint, *_) in acts if _now - t < 300]
                 if _recent:
                     summary = ', '.join(f"{tool}({hint})" if hint else tool for _, tool, hint in _recent[-4:])
@@ -492,13 +501,14 @@ def main() -> None:
                 sessions_with_new_tools.add(sid)
                 # Keep a short rolling summary per session for tick context
                 # (counter is driven by tool_any — not here, avoids double-count)
-                if sid not in recent_activity:
-                    recent_activity[sid] = []
                 file_path = entry.get('file')   # full absolute path, or None
                 cwd       = entry.get('cwd')    # session project root, or None
-                recent_activity[sid].append((ets, short_name(tool), hint, file_path, cwd))
-                if len(recent_activity[sid]) > 6:
-                    recent_activity[sid] = recent_activity[sid][-6:]
+                with _activity_lock:
+                    if sid not in recent_activity:
+                        recent_activity[sid] = []
+                    recent_activity[sid].append((ets, short_name(tool), hint, file_path, cwd))
+                    if len(recent_activity[sid]) > 6:
+                        recent_activity[sid] = recent_activity[sid][-6:]
 
                 # Write tools reset the read-heavy TTL so it can re-trigger
                 if classify_tool(tool) == 'write':
@@ -542,7 +552,8 @@ def main() -> None:
             for tc_sid, tc_data in turn_complete_this_batch.items():
                 since_last = now - last_comment_per_session.get(tc_sid, 0)
                 if since_last >= TURN_COOLDOWN:
-                    acts = recent_activity.get(tc_sid, [])
+                    with _activity_lock:
+                        acts = list(recent_activity.get(tc_sid, []))
                     recent = [(t, h) for ts_e, t, h, *_ in acts if (now - ts_e) <= 60.0]
                     if recent:
                         trigger = 'turn_complete'
@@ -574,7 +585,9 @@ def main() -> None:
                 # Only use activity entries from the last ACTIVITY_RECENCY_WINDOW seconds
                 # so the tick reflects what's happening NOW, not an hour ago
                 summary_parts = []
-                for sess_id, acts in recent_activity.items():
+                with _activity_lock:
+                    _tick_snapshot = list(recent_activity.items())
+                for sess_id, acts in _tick_snapshot:
                     recent = [(t, h) for ts_e, t, h, *_ in acts if (now - ts_e) <= ACTIVITY_RECENCY_WINDOW]
                     if recent:
                         pairs = [f"{t}({h})" if h else t for t, h in recent[-3:]]

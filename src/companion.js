@@ -583,7 +583,7 @@ export function addToVexilLog(state, msg) {
 
 async function pollMasterOut() {
   try {
-    const raw = await invoke('read_file_as_text', { path: '/tmp/vexil_master_out.jsonl' });
+    const raw = await invoke('read_file_as_text', { path: '~/.local/share/pixel-terminal/vexil_master_out.jsonl' });
     const lines = raw.split('\n').filter(Boolean);
     if (lines.length <= _masterOutOffset) return;
     const newLines = lines.slice(_masterOutOffset);
@@ -687,7 +687,7 @@ export async function initCompanion() {
 
   // Seed master output offset — don't re-show old entries from previous launch
   try {
-    const raw = await invoke('read_file_as_text', { path: '/tmp/vexil_master_out.jsonl' });
+    const raw = await invoke('read_file_as_text', { path: '~/.local/share/pixel-terminal/vexil_master_out.jsonl' });
     _masterOutOffset = raw.split('\n').filter(Boolean).length;
   } catch { /* file doesn't exist yet — fine */ }
 
