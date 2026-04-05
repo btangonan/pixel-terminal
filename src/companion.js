@@ -62,24 +62,6 @@ const BUDDY_SPRITE_MAP = {
   chonk:    'seal',
 };
 
-// Button labels driven by buddy voice key
-const APPROVE_LABELS = {
-  sarcastic:  'fine, whatever',
-  excitable:  'YES DO IT!!',
-  measured:   'approved',
-  technical:  'allow',
-  impatient:  'ok',
-  default:    'approve',
-};
-
-const DENY_LABELS = {
-  sarcastic:  'absolutely not',
-  excitable:  'NO STOP!!',
-  measured:   'deny',
-  technical:  'reject',
-  impatient:  'no',
-  default:    'deny',
-};
 
 // ── Module state ──────────────────────────────────────────────────────────────
 
@@ -145,23 +127,15 @@ function injectCompanionPanel() {
     <div class="companion-sprite-wrap" id="companion-sprite"></div>
     <div class="companion-bubble hidden" id="companion-bubble">
       <div class="companion-bubble-msg" id="companion-msg"></div>
-      <div class="companion-bubble-actions hidden" id="companion-actions">
-        <button class="companion-btn companion-approve" id="companion-approve">approve</button>
-        <button class="companion-btn companion-deny" id="companion-deny">deny</button>
-      </div>
     </div>
   `;
 
   // Inject into body (fixed position via CSS)
   document.body.appendChild(wrap);
 
-  // Wire approve/deny buttons
-  document.getElementById('companion-approve').addEventListener('click', () => {
-    writeApproval(true);
-  });
-  document.getElementById('companion-deny').addEventListener('click', () => {
-    writeApproval(false);
-  });
+  // Wire approval dialog buttons (approval uses the neutral system dialog, not the bubble)
+  document.getElementById('approval-ok').addEventListener('click', () => writeApproval(true));
+  document.getElementById('approval-deny').addEventListener('click', () => writeApproval(false));
 }
 
 // ── ASCII sprite rendering + animation ───────────────────────────────────────
@@ -277,13 +251,10 @@ function renderCompanionSprite() {
 
 // ── Bubble display ────────────────────────────────────────────────────────────
 
-function showBubble({ msg, type, interactive }) {
+function showBubble({ msg, type }) {
   const wrap   = document.getElementById('companion-wrap');
   const bubble = document.getElementById('companion-bubble');
   const msgEl  = document.getElementById('companion-msg');
-  const actions = document.getElementById('companion-actions');
-  const approveBtn = document.getElementById('companion-approve');
-  const denyBtn    = document.getElementById('companion-deny');
 
   if (!wrap || !bubble) return;
 
@@ -293,15 +264,6 @@ function showBubble({ msg, type, interactive }) {
   msgEl.textContent = msg;
   bubble.className = `companion-bubble ${type}`;
 
-  if (interactive) {
-    const voice = buddy?.voice ?? 'default';
-    approveBtn.textContent = APPROVE_LABELS[voice] ?? APPROVE_LABELS.default;
-    denyBtn.textContent    = DENY_LABELS[voice]    ?? DENY_LABELS.default;
-    actions.classList.remove('hidden');
-  } else {
-    actions.classList.add('hidden');
-  }
-
   wrap.classList.remove('hidden');
   bubble.classList.remove('hidden');
   _currentPriority = PRIORITY[type] ?? 1;
@@ -310,9 +272,7 @@ function showBubble({ msg, type, interactive }) {
   const log = document.getElementById('message-log');
   if (log) { log.classList.add('companion-active'); log.scrollTop = log.scrollHeight; }
 
-  if (!interactive) {
-    _dismissTimer = setTimeout(() => hideBubble(), BUBBLE_AUTODISMISS);
-  }
+  _dismissTimer = setTimeout(() => hideBubble(), BUBBLE_AUTODISMISS);
 }
 
 function hideBubble() {
@@ -333,7 +293,23 @@ function hideBubble() {
 
 // ── Priority-aware enqueue ────────────────────────────────────────────────────
 
+function showApprovalDialog(msg) {
+  document.getElementById('approval-msg').textContent = msg;
+  document.getElementById('approval-overlay').classList.remove('hidden');
+}
+
+function hideApprovalDialog() {
+  document.getElementById('approval-overlay').classList.add('hidden');
+  // Drain any queued non-interactive bubble messages
+  hideBubble();
+}
+
 function enqueueBubble({ msg, type, interactive }) {
+  if (interactive) {
+    // Approval requests go to the neutral system dialog, not the companion bubble
+    showApprovalDialog(msg);
+    return;
+  }
   const priority = PRIORITY[type] ?? 1;
   if (priority >= _currentPriority && !_approvalPending) {
     // Higher or equal priority — show immediately (preempt)
@@ -353,6 +329,8 @@ async function writeApproval(approved) {
       // Route to hook gate response file (pixel_gate.py is polling this)
       const payload = JSON.stringify({ id: _hookGateReqId, approved });
       await invoke('write_file_as_text', { path: HOOK_GATE_RESP_PATH, content: payload });
+      // Clear gate file so the poller doesn't re-trigger before pixel_gate.py picks up the response
+      await invoke('write_file_as_text', { path: HOOK_GATE_PATH, content: '{}' }).catch(() => {});
       _hookGatePending = false;
       _hookGateReqId   = null;
     } else {
@@ -360,12 +338,14 @@ async function writeApproval(approved) {
       const payload = JSON.stringify({ approved });
       await invoke('write_file_as_text', { path: APPROVAL_PATH, content: payload });
       _approvalPending = false;
+      _lastLintSeen = '';  // reset so pollLintFile re-reads fresh state from memory_lint.py
     }
   } catch (e) {
     console.error('[companion] failed to write approval:', e);
     // Leave pending flag set so user can retry
+    return;
   }
-  hideBubble();
+  hideApprovalDialog();
 }
 
 // ── Hook gate poller ──────────────────────────────────────────────────────────

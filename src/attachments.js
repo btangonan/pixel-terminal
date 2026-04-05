@@ -21,25 +21,9 @@ function showAttachmentError(msg) {
   if (!toast) {
     toast = document.createElement('div');
     toast.id = 'att-error-toast';
-    Object.assign(toast.style, {
-      position: 'fixed',
-      bottom: '72px',
-      left: '50%',
-      transform: 'translateX(-50%)',
-      background: '#0d0d0d',
-      color: '#d87756',
-      border: '1px solid #555',
-      borderRadius: '0',
-      padding: '8px 16px',
-      fontSize: '12px',
-      fontFamily: 'var(--font-mono, monospace)',
-      zIndex: '9999',
-      pointerEvents: 'none',
-      whiteSpace: 'nowrap',
-    });
     document.body.appendChild(toast);
   }
-  toast.textContent = `⚠ ${msg}`;
+  toast.textContent = `△ ${msg}`;
   toast.style.display = 'block';
   clearTimeout(_toastTimer);
   _toastTimer = setTimeout(() => { toast.style.display = 'none'; }, 4000);
