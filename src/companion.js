@@ -208,13 +208,8 @@ function renderCompanionSprite() {
   const panel = document.getElementById('vexil-ascii');
   if (!panel || !buddy) return;
 
-  // Resolve display species from personality text first (same logic as bio label).
-  // buddy.species is the Claude Code sync value (e.g. 'duck'); the personality
-  // text (the "soul") is authoritative for display — it may say "dragon".
-  const KNOWN_ASCII_SPECIES = Object.keys(SPRITES);
-  const personalityLower = (buddy.personality ?? '').toLowerCase();
-  const displaySpecies = KNOWN_ASCII_SPECIES.find(s => personalityLower.includes(s)) ?? buddy.species;
-  _asciiSpecies = SPRITES[displaySpecies] ? displaySpecies : 'duck';
+  // Bones species is authoritative — personality text may mention a stale species name
+  _asciiSpecies = SPRITES[buddy.species] ? buddy.species : 'duck';
   _asciiEye     = getEyeChar(buddy);
   _asciiHat     = buddy.hat ?? 'none';
 
@@ -510,12 +505,8 @@ export async function initCompanion() {
   // Species: prefer term extracted from personality text (soul > bones for display)
   const bio = document.getElementById('vexil-bio');
   if (bio && buddy) {
-    const KNOWN_SPECIES = ['dragon','cat','rabbit','penguin','frog','octopus','duck',
-      'goose','blob','turtle','snail','ghost','axolotl','capybara','cactus','robot',
-      'mushroom','chonk','owl','parrot','panda','fox','koala','platypus','narwhal',
-      'sloth','hedgehog','hamster'];
-    const personalityLower = (buddy.personality ?? '').toLowerCase();
-    const displaySpecies = KNOWN_SPECIES.find(s => personalityLower.includes(s)) ?? buddy.species;
+    // Bones species is authoritative — personality text may mention a stale species name
+    const displaySpecies = buddy.species ?? 'duck';
     const rarityStr = buddy.rarity ? `${buddy.rarity} ` : '';
     bio.querySelector('.vexil-bio-name').textContent =
       `${buddy.name} · ${rarityStr}${displaySpecies}`.trim();
@@ -554,10 +545,8 @@ export async function initCompanion() {
   injectCompanionPanel();
   renderCompanionSprite();
 
-  // Apply buddy hue as CSS variable (used in bubble border)
-  if (buddy?.hue) {
-    document.documentElement.style.setProperty('--companion-hue', buddy.hue);
-  }
+  // Companion hue: always use app accent — species hue is for familiars, not the oracle
+  document.documentElement.style.setProperty('--companion-hue', '#d87756');
 
   // Heartbeat: write /tmp/pixel_terminal_alive every 5s so memory_lint.py
   // knows the terminal is open and should wait for user approval

@@ -322,7 +322,15 @@ pub fn sync_buddy() -> Result<SyncResult, String> {
             if let Ok(existing) = serde_json::from_str::<Value>(&existing_raw) {
                 let synced_at   = existing.get("syncedAt").and_then(|v| v.as_i64()).unwrap_or(-1);
                 let synced_from = existing.get("syncedFrom").and_then(|v| v.as_str()).unwrap_or("");
-                if synced_at == hatched_at && synced_from == "claude-code" {
+                // Compare hatchedAt + name + personality — catches re-rolls, renames, and personality edits
+                let existing_name = existing.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let soul_name     = soul.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let existing_pers = existing.get("personality").and_then(|v| v.as_str()).unwrap_or("");
+                let soul_pers     = soul.get("personality").and_then(|v| v.as_str()).unwrap_or("");
+                if synced_at == hatched_at && synced_from == "claude-code"
+                    && (soul_name.is_empty() || existing_name == soul_name)
+                    && (soul_pers.is_empty() || existing_pers == soul_pers)
+                {
                     let name    = existing.get("name").and_then(|v| v.as_str()).unwrap_or("Buddy");
                     let species = existing.get("species").and_then(|v| v.as_str()).unwrap_or("?");
                     let rarity  = existing.get("rarity").and_then(|v| v.as_str()).unwrap_or("?");
@@ -360,6 +368,9 @@ pub fn sync_buddy() -> Result<SyncResult, String> {
         obj.insert("name".to_string(), Value::String("Buddy".to_string()));
     }
     if let Some(personality) = soul.get("personality").and_then(|v| v.as_str()) {
+        // Always preserve the user's unique LLM-generated personality from Claude Code.
+        // The soul is the companion's voice — it may mention a species from a previous
+        // hatch, but the character identity is what matters, not species accuracy.
         obj.insert("personality".to_string(), Value::String(personality.to_string()));
     }
 
