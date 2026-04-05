@@ -778,5 +778,5 @@ pub async fn daemon_loop(shared: Arc<DaemonShared>) {
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 pub fn start_daemon(shared: Arc<DaemonShared>) {
-    tokio::spawn(daemon_loop(shared));
+    tauri::async_runtime::spawn(daemon_loop(shared));
 }
