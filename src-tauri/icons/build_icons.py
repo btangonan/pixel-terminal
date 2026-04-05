@@ -2,7 +2,7 @@
 """
 Build dock icon, .icns, and all Tauri PNGs for pixel-terminal.
 
-Source: ASCII art 'a' from sprites/logos/a.txt rendered in Menlo, orange #db7656, dark #0d0d0d bg.
+Source: ASCII art 'a' from sprites/logos/a.txt rendered in Menlo, orange #d87756, dark #0d0d0d bg.
 Outputs TWO master PNGs — do not conflate them:
   icon_master_1024.png         flat square  → used for .icns + Tauri bundle (macOS squircles it)
   icon_master_1024_rounded.png pre-squircle → used by lib.rs include_bytes! → NSDockTile.contentView
@@ -175,7 +175,7 @@ def render_ascii_art_logo(canvas_size: int) -> Image.Image:
     ink_h = (len(lines) - 1) * line_h + (sample_bbox[3] - sample_bbox[1])
     start_y = (canvas_size - ink_h) // 2 - sample_bbox[1]
 
-    orange = (219, 118, 86, 255)  # #db7656
+    orange = (216, 119, 86, 255)  # #d87756
     stroke = max(1, font_size // 33)  # slightly lighter than before
 
     def _render(ox, oy):

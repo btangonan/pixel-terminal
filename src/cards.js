@@ -20,7 +20,7 @@ const _RARITY_STARS = {
   common: '★', uncommon: '★★', rare: '★★★', epic: '★★★★', legendary: '★★★★★',
 };
 const _RARITY_COLORS = {
-  common: '#555', uncommon: '#cc7d5e', rare: '#4fc3f7', epic: '#ce93d8', legendary: '#ffd700',
+  common: '#555', uncommon: '#d87756', rare: '#4fc3f7', epic: '#ce93d8', legendary: '#ffd700',
 };
 const _EYE_LABELS = {
   '·': 'dot', '✦': 'star', '×': 'x', '◉': 'circle', '@': 'at', '°': 'degree',

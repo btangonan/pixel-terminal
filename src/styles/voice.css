@@ -32,7 +32,7 @@
   border-bottom: 1px solid var(--border);
 }
 #voice-log-header.oracle-active {
-  border-bottom-color: color-mix(in srgb, var(--companion-hue, #CC7D5E) 35%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--companion-hue, #d87756) 35%, transparent);
   flex-shrink: 0;
 }
 #voice-log-tabs {
@@ -67,7 +67,7 @@
   border-color: var(--border-hi);
 }
 #btn-clear-voice-log {
-  font-family: var(--font-mono);
+  font-family: var(--font);
   font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--accent);

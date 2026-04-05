@@ -58,7 +58,7 @@
 
 ### Key Constants
 - Font: Menlo (`/System/Library/Fonts/Menlo.ttc`)
-- Color: `#db7656` orange, `#0d0d0d` bg
+- Color: `#d87756` orange, `#0d0d0d` bg
 - `REROLL_NIM_COST = 0` in `src/nim.js` — gate open for testing
 - `NIM_PER_TOKENS = 1000` — 1 nim per 1000 tokens
 - `FAMILIAR_SALT = 'pixel-familiar-2026'`

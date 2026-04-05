@@ -21,7 +21,7 @@
   font-family: var(--font-mono);
   font-size: 10px;
   line-height: 1.2;
-  color: var(--companion-hue, #CC7D5E);
+  color: var(--companion-hue, #d87756);
   margin: 0;
   padding: 0;
   white-space: pre;
@@ -38,14 +38,14 @@
   align-items: center;
   justify-content: space-between;
   padding: 6px 8px;
-  border-bottom: 1px solid color-mix(in srgb, var(--companion-hue, #CC7D5E) 35%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--companion-hue, #d87756) 35%, transparent);
   flex-shrink: 0;
 }
 .vexil-bio.hidden { display: none; }
 .vexil-bio-name {
-  font-family: var(--font-mono);
+  font-family: var(--font);
   font-size: 11px;
-  color: var(--companion-hue, #CC7D5E);
+  color: var(--companion-hue, #d87756);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   text-align: right;
@@ -96,7 +96,7 @@
   background: #000;
   border: 1px solid var(--companion-hue);
   padding: 6px 10px;
-  font-family: var(--font-mono);
+  font-family: var(--font);
   font-size: 11px;
   line-height: 1.4;
   color: var(--text);
@@ -140,7 +140,7 @@
   background: #000;
   border: 1px solid var(--text-mute, #555);
   color: var(--text);
-  font-family: var(--font-mono);
+  font-family: var(--font);
   font-size: 10px;
   padding: 2px 8px;
   cursor: pointer;

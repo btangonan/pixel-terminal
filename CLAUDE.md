@@ -111,7 +111,7 @@ npm run tauri dev
 Skipping the `touch` = old icon bytes silently re-used from incremental build cache.
 
 ### Icon source
-The logo is the figlet ASCII art `a` from `sprites/logos/a.txt`, rendered in Menlo at ~62% canvas fill, orange `#db7656` on dark `#0d0d0d`. Centering uses a two-pass render (layout → measure actual ink bounds → re-render corrected) because the figlet `a` is right-heavy. See `build_icons.py:render_ascii_art_logo()`.
+The logo is the figlet ASCII art `a` from `sprites/logos/a.txt`, rendered in Menlo at ~62% canvas fill, orange `#d87756` on dark `#0d0d0d`. Centering uses a two-pass render (layout → measure actual ink bounds → re-render corrected) because the figlet `a` is right-heavy. See `build_icons.py:render_ascii_art_logo()`.
 
 ## 🪵 Live Debug Log
 `/tmp/pixel-terminal.log` — written by `launch.command` via `tee`. Contains all webview events, `pxLog` output, Vexil master commentary, and JS errors (unhandled rejections show here).

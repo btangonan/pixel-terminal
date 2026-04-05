@@ -3,21 +3,21 @@
   <rect width="16" height="16" fill="#181818"/>
 
   <!-- salmon glyphs row 2 -->
-  <rect x="2" y="2" width="4" height="1" fill="#db7656"/>
-  <rect x="11" y="2" width="4" height="1" fill="#db7656"/>
+  <rect x="2" y="2" width="4" height="1" fill="#d87756"/>
+  <rect x="11" y="2" width="4" height="1" fill="#d87756"/>
   <!-- row 3 -->
-  <rect x="2" y="3" width="1" height="1" fill="#db7656"/>
-  <rect x="5" y="3" width="1" height="1" fill="#db7656"/>
-  <rect x="7" y="3" width="1" height="1" fill="#db7656"/>
-  <rect x="9" y="3" width="1" height="1" fill="#db7656"/>
-  <rect x="11" y="3" width="1" height="1" fill="#db7656"/>
+  <rect x="2" y="3" width="1" height="1" fill="#d87756"/>
+  <rect x="5" y="3" width="1" height="1" fill="#d87756"/>
+  <rect x="7" y="3" width="1" height="1" fill="#d87756"/>
+  <rect x="9" y="3" width="1" height="1" fill="#d87756"/>
+  <rect x="11" y="3" width="1" height="1" fill="#d87756"/>
   <!-- row 4 -->
-  <rect x="2" y="4" width="4" height="1" fill="#db7656"/>
-  <rect x="8" y="4" width="1" height="1" fill="#db7656"/>
-  <rect x="11" y="4" width="1" height="1" fill="#db7656"/>
+  <rect x="2" y="4" width="4" height="1" fill="#d87756"/>
+  <rect x="8" y="4" width="1" height="1" fill="#d87756"/>
+  <rect x="11" y="4" width="1" height="1" fill="#d87756"/>
   <!-- row 5 -->
-  <rect x="2" y="5" width="1" height="1" fill="#db7656"/>
-  <rect x="7" y="5" width="1" height="1" fill="#db7656"/>
-  <rect x="9" y="5" width="1" height="1" fill="#db7656"/>
-  <rect x="11" y="5" width="4" height="1" fill="#db7656"/>
+  <rect x="2" y="5" width="1" height="1" fill="#d87756"/>
+  <rect x="7" y="5" width="1" height="1" fill="#d87756"/>
+  <rect x="9" y="5" width="1" height="1" fill="#d87756"/>
+  <rect x="11" y="5" width="4" height="1" fill="#d87756"/>
 </svg>
