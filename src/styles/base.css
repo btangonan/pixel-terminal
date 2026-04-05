@@ -227,7 +227,7 @@ body {
 #message-log {
   flex: 1;
   overflow-y: auto;
-  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+  padding: var(--sp-3) var(--sp-3) 24px;
   display: flex;
   flex-direction: column;
   gap: 3px;

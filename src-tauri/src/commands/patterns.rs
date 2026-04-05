@@ -182,6 +182,20 @@ pub(crate) fn build_prompt(trigger: &str, data: &Value) -> Option<String> {
             let summary = data["summary"].as_str().unwrap_or("");
             Some(format!("Active across sessions: {summary}. What's the common thread?"))
         }
+        "mid_turn_activity" => {
+            let tc   = data["tool_count"].as_u64().unwrap_or(0);
+            let acts: Vec<String> = data["activity"].as_array().map(|a| a.iter().map(|e| {
+                let t = e[0].as_str().unwrap_or(""); let h = e[1].as_str().unwrap_or("");
+                if h.is_empty() { t.into() } else { format!("{t}({h})") }
+            }).collect()).unwrap_or_default();
+            let steps = acts.join(" → ");
+            Some(format!(
+                "Mid-turn: {steps} ({tc} tools so far, still going).\n\n\
+                Write the next line for the companion. React to what Claude is doing RIGHT NOW — \
+                the direction, pace, or intent behind the current burst. Under 20 words. \
+                If nothing genuinely additive, output exactly: SKIP"
+            ))
+        }
         _ => None,
     }
 }

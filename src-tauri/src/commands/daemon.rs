@@ -24,13 +24,14 @@ use tokio::time::sleep;
 
 // ── Loop constants ────────────────────────────────────────────────────────────
 
-const POLL_MS:               u64 = 1_000;
-const COOLDOWN_S:            f64 = 60.0;
-const TURN_COOLDOWN_S:       f64 = 20.0;
+const POLL_MS:               u64 = 400;
+const COOLDOWN_S:            f64 = 12.0;
+const TURN_COOLDOWN_S:       f64 = 4.0;
 const TOKEN_BLOAT_THRESHOLD: u64 = 80_000;
 const FIRED_PATTERN_TTL_S:   f64 = 300.0;
-const ACTIVITY_TRIGGER_CNT:  u32 = 8;
-const ACTIVITY_RECENCY_S:    f64 = 120.0;
+const ACTIVITY_TRIGGER_CNT:  u32 = 5;
+const ACTIVITY_RECENCY_S:    f64 = 90.0;
+const MID_TURN_TOOL_CNT:     u32 = 4;   // comment mid-turn after N tool_use events
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -292,10 +293,11 @@ pub async fn daemon_loop(shared: Arc<DaemonShared>) {
 
         if new_entries.is_empty() { continue; }
 
-        // ── Process events ────────────────────────────────────────────────────
+        // ── Process events (always runs — never gated by commentary_busy) ────
         let now = now_s();
         let mut tc_batch: HashMap<String, Value> = HashMap::new();
         let mut tool_sids: HashSet<String>       = HashSet::new();
+        let mut tools_this_tick: u32 = 0;  // mid-turn tool_use count for alacrity
 
         {
             let mut st = shared.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -324,6 +326,7 @@ pub async fn daemon_loop(shared: Arc<DaemonShared>) {
                             st.fired_patterns.remove(&format!("{sid}:read_heavy"));
                         }
                         tool_sids.insert(sid);
+                        tools_this_tick += 1;
                     }
                     "turn_complete" => {
                         if entry["tool_count"].as_u64().unwrap_or(0) > 0 {
@@ -366,9 +369,48 @@ pub async fn daemon_loop(shared: Arc<DaemonShared>) {
         }
 
         if !claude_ok { continue; }
-        if shared.commentary_busy.load(Ordering::Relaxed) { continue; }
+        // commentary_busy only gates commentary spawns below — never skips event processing above
+        let busy = shared.commentary_busy.load(Ordering::Relaxed);
 
-        // ── Turn-complete commentary (per-session 20s cooldown) ───────────────
+        // ── Mid-turn commentary (tool_use burst without turn_complete) ────────
+        // When Claude is mid-turn doing many tools, don't wait for turn_complete.
+        if !busy && tools_this_tick >= MID_TURN_TOOL_CNT && tc_batch.is_empty() {
+            // Pick the session with the most recent activity
+            if let Some(mid_sid) = tool_sids.iter().next().cloned() {
+                let since = {
+                    let st = shared.state.lock().unwrap_or_else(|e| e.into_inner());
+                    now - st.last_comment_per.get(&mid_sid).copied().unwrap_or(0.0)
+                };
+                if since >= TURN_COOLDOWN_S {
+                    let (recent_acts, persona) = {
+                        let st = shared.state.lock().unwrap_or_else(|e| e.into_inner());
+                        let acts: Vec<(String, String)> = st.recent_activity.get(&mid_sid)
+                            .map(|a| a.iter().filter(|(ts, _, _, _, _)| now - ts <= 30.0)
+                                .map(|(_, t, h, _, _)| (t.clone(), h.clone())).collect())
+                            .unwrap_or_default();
+                        (acts, build_persona(&st.recent_actions))
+                    };
+                    if !recent_acts.is_empty() {
+                        let act_json: Vec<Value> = recent_acts.iter().rev().take(4).rev()
+                            .map(|(t, h)| serde_json::json!([t, h])).collect();
+                        let data = serde_json::json!({
+                            "session_id": mid_sid,
+                            "tool_count": tools_this_tick,
+                            "activity": act_json,
+                        });
+                        { let mut st = shared.state.lock().unwrap_or_else(|e| e.into_inner()); st.last_comment_per.insert(mid_sid, now); }
+                        shared.commentary_busy.store(true, Ordering::Relaxed);
+                        let sh = shared.clone();
+                        tokio::spawn(commentary_worker("mid_turn_activity".into(), data, persona, sh));
+                        continue;
+                    }
+                }
+            }
+        }
+
+        if busy { continue; }
+
+        // ── Turn-complete commentary (per-session cooldown) ──────────────────
         for (tc_sid, tc_entry) in &tc_batch {
             let since = {
                 let st = shared.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -403,7 +445,7 @@ pub async fn daemon_loop(shared: Arc<DaemonShared>) {
         }
         if shared.commentary_busy.load(Ordering::Relaxed) { continue; }
 
-        // ── Pattern triggers (global 60s cooldown) ────────────────────────────
+        // ── Pattern triggers (global cooldown) ───────────────────────────────
         let last_global = { shared.state.lock().unwrap_or_else(|e| e.into_inner()).last_comment_ts };
         if (now - last_global) > COOLDOWN_S {
             let trigger_opt = {

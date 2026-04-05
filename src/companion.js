@@ -592,7 +592,7 @@ export async function initCompanion() {
     await pollLintFile();
   }, POLL_INTERVAL);
   setInterval(pollOpsReport, 5000);   // ops report slower — less frequent events
-  setInterval(pollMasterOut, 1500);   // master proactive commentary
+  setInterval(pollMasterOut, 800);    // master proactive commentary — fast pickup for alacrity
 
   document.dispatchEvent(new CustomEvent('pixel:companion-ready', { detail: { name: buddy?.name } }));
 }
