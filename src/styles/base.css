@@ -252,6 +252,7 @@ body {
   user-select: none;
 }
 body.no-session-active #app-title-pre { opacity: 0.7; }
+body:not(.no-session-active) #app-title-pre { color: var(--text-mid); }
 
 /* Empty state text — sits below the logo */
 #empty-state {
