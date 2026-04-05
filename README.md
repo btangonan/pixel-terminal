@@ -42,6 +42,22 @@ Vexil is the cross-session watcher daemon running in the Rust backend while Clau
 
 ---
 
+## Why Anima?
+
+**The companion noticed something. Act on it.**
+Claude Code's built-in companion shows advice in a bubble you can't touch — screenshot it or retype it by hand. In Anima, companion comments are selectable text. Copy, paste into the session, send. Done.
+
+**Twelve windows. All running. None of them telling you anything.**
+Anima's session manager gives each one a face: a sprite that animates when work is happening, a live token counter, a notification when Claude finishes and is waiting on you. You stop babysitting tabs. You start actually knowing what's going on — and so does your companion.
+
+**You attached that file three messages ago. Now you need it again.**
+In a terminal, that means finding it, dragging it back, re-attaching. Anima tracks every file you've sent in a session and surfaces it for re-use. Your companion remembers what you handed Claude, even when you've moved on.
+
+**Every session has a story. Anima keeps them all.**
+Full chat history for every project, every session — browsable without leaving the app. Good for context. Better when your companion has been watching the whole run and can tell you what you missed.
+
+---
+
 ## Features
 
 | | |
