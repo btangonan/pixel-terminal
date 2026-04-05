@@ -87,13 +87,9 @@ let _currentPriority = 0;    // priority of the currently-showing bubble
 // ── Tauri home dir ────────────────────────────────────────────────────────────
 
 async function getHomeDir() {
-  try {
-    // Tauri v2: use path plugin
-    return await window.__TAURI__.path.homeDir();
-  } catch {
-    // Fallback: read from env or hardcode
-    return '/Users/' + (window.__TAURI_INTERNALS__?.metadata?.username ?? 'bradleytangonan');
-  }
+  // Tauri v2: use path plugin. No fallback — a wrong path silently breaks buddy loading
+  // for every user who isn't the developer. Fail loud instead.
+  return await window.__TAURI__.path.homeDir();
 }
 
 // ── Buddy loader ──────────────────────────────────────────────────────────────

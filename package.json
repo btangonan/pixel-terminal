@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "tauri": "tauri",
-    "dev": "python3 scripts/vexil_master.py & npm run tauri -- dev",
+    "dev": "npm run tauri -- dev",
     "test": "vitest run"
   },
   "devDependencies": {

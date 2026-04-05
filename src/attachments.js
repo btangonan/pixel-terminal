@@ -136,7 +136,10 @@ async function stageFilePath(sessionId, path) {
       return;
     }
   } catch (e) {
-    // Metadata read failed (permissions, missing file) — let the read attempt handle it
+    // Cannot verify size — reject rather than risk reading an arbitrarily large file into memory.
+    console.warn(`[attachments] size check failed for ${name}:`, e);
+    showAttachmentError(`Could not verify size of ${name}. Attachment rejected.`);
+    return;
   }
 
   let data;
