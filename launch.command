@@ -106,10 +106,6 @@ source ~/.zprofile 2>/dev/null || true
 source ~/.zshrc    2>/dev/null || true
 
 # Note: buddy.json sync now runs inside the app via invoke('sync_buddy') — Rust port of sync_real_buddy.ts
-
-# Start Vexil Master daemon — proactive cross-session commentary
-python3 "$(dirname "$0")/scripts/vexil_master.py" >> "$LOG_FILE" 2>&1 &
-VEXIL_MASTER_PID=$!
-trap "kill $VEXIL_MASTER_PID 2>/dev/null; exit" EXIT INT TERM
+# Note: Vexil Master daemon now runs inside the app as a tokio task — Rust port of vexil_master.py
 
 npm run tauri dev 2>&1 | tee -a "$LOG_FILE"
