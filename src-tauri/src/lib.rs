@@ -12,7 +12,7 @@ pub mod commands;
 use commands::file_io::{append_line_to_file, get_file_size, get_file_size_any, read_file_as_base64, read_file_as_text, write_file_as_text};
 use commands::history::{load_session_history, scan_session_history};
 use commands::companion::sync_buddy;
-use commands::daemon::{start_daemon, DaemonShared};
+use commands::daemon::{oracle_query, start_daemon, DaemonShared};
 use commands::misc::{js_log, read_slash_command_content, read_slash_commands, register_child_pid, send_signal, unregister_child_pid};
 use commands::misc::SpawnedPids;
 
@@ -24,8 +24,11 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            // Start Vexil Master daemon (replaces scripts/vexil_master.py)
-            start_daemon(DaemonShared::new());
+            // Start Vexil Master daemon (replaces scripts/vexil_master.py).
+            // Manage the shared state so oracle_query command can access sem + session context.
+            let daemon_shared = DaemonShared::new();
+            app.manage(daemon_shared.clone());
+            start_daemon(daemon_shared);
 
             ws_bridge::init(app)?;
 
@@ -92,7 +95,8 @@ pub fn run() {
             js_log,
             write_file_as_text,
             append_line_to_file,
-            sync_buddy
+            sync_buddy,
+            oracle_query
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

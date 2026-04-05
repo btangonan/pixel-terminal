@@ -205,7 +205,6 @@ function resolveSession(ref) {
 }
 
 // ── Oracle pre-session chat ────────────────────────────────
-const ORACLE_QUERY_PATH = '~/.local/share/pixel-terminal/oracle_query.json';
 
 function initOraclePreChat() {
   const wrap  = $.oraclePreChat;
@@ -246,38 +245,31 @@ function initOraclePreChat() {
     _pendingMsg = text;
 
     try {
-      await invoke('write_file_as_text', {
-        path: ORACLE_QUERY_PATH,
-        content: JSON.stringify({
-          message: text,
-          history: _history.slice(-6),
-          req_id: reqId,
-          sessions: [...sessions.values()].map(s => ({ name: s.name, cwd: s.cwd })),
-        }),
+      const resp = await invoke('oracle_query', {
+        message: text,
+        history: _history.slice(-6),
+        req_id: reqId,
+        sessions: [...sessions.values()].map(s => ({ name: s.name, cwd: s.cwd })),
       });
+      if (_thinkingEl) { _thinkingEl.remove(); _thinkingEl = null; }
+      _pendingReqId = null;
+
+      const ts = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+      const el = document.createElement('div');
+      el.className = 'vexil-entry vexil-entry--buddy';
+      el.innerHTML = `<span class="vexil-ts">[${ts}]</span>${escapeHtml(resp.msg)}`;
+      _oracleChatLog?.appendChild(el);
+      if (_oracleChatLog) requestAnimationFrame(() => { _oracleChatLog.scrollTop = _oracleChatLog.scrollHeight; });
+
+      _history.push({ role: 'user', content: _pendingMsg });
+      _history.push({ role: 'oracle', content: resp.msg });
+      if (_history.length > 6) _history = _history.slice(-6);
     } catch (_) {
       if (_thinkingEl) { _thinkingEl.remove(); _thinkingEl = null; }
       _pendingReqId = null;
       appendEntry('(oracle unreachable)', 'oracle-thinking');
     }
   }
-
-  setOracleResponseListener((entry) => {
-    if (entry.req_id !== _pendingReqId) return;
-    if (_thinkingEl) { _thinkingEl.remove(); _thinkingEl = null; }
-    _pendingReqId = null;
-
-    const ts = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
-    const el = document.createElement('div');
-    el.className = 'vexil-entry vexil-entry--buddy';
-    el.innerHTML = `<span class="vexil-ts">[${ts}]</span>${escapeHtml(entry.msg)}`;
-    _oracleChatLog?.appendChild(el);
-    if (_oracleChatLog) requestAnimationFrame(() => { _oracleChatLog.scrollTop = _oracleChatLog.scrollHeight; });
-
-    _history.push({ role: 'user', content: _pendingMsg });
-    _history.push({ role: 'oracle', content: entry.msg });
-    if (_history.length > 6) _history = _history.slice(-6);
-  });
 
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); submit(); }

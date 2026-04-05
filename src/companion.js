@@ -571,10 +571,7 @@ async function pollMasterOut() {
     for (const line of newLines) {
       try {
         const entry = JSON.parse(line);
-        if (entry.type === 'oracle_response') {
-          // Route to pre-session oracle chat — do NOT add to lint log
-          if (_oracleResponseListener) _oracleResponseListener(entry);
-        } else if (entry.msg) {
+        if (entry.msg) {
           addToLintLog('vexil', entry.msg);
           invoke('js_log', { msg: `[vexil-master] "${entry.msg?.slice(0,80)}"` }).catch(() => {});
           // bubble suppressed — log tab is the surface

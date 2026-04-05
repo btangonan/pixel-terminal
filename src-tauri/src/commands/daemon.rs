@@ -3,7 +3,7 @@
 //! Runs as a long-lived tokio task inside the Tauri app. Polls vexil_feed.jsonl
 //! for events from all Claude sessions, detects patterns, and fires proactive
 //! commentary by calling `claude -p` as a subprocess. Also handles oracle
-//! pre-session chat by polling oracle_query.json (same file-protocol as Python).
+//! pre-session oracle chat via the oracle_query Tauri command (direct invoke from JS).
 //!
 //! Drop-in compatible with the Python daemon — companion.js sees no difference
 //! in vexil_master_out.jsonl format.
@@ -81,15 +81,12 @@ pub struct DaemonState {
     // Feed reader state
     feed_offset: u64,
     feed_inode:  u64,
-    // Oracle file-polling state
-    oracle_mtime: f64,
 }
 
 pub struct DaemonShared {
     pub state:           Arc<Mutex<DaemonState>>,
     pub sem:             Arc<Semaphore>,
     pub commentary_busy: Arc<AtomicBool>,
-    pub oracle_busy:     Arc<AtomicBool>,
 }
 
 impl DaemonShared {
@@ -105,7 +102,6 @@ impl DaemonShared {
             state:           Arc::new(Mutex::new(initial)),
             sem:             Arc::new(Semaphore::new(2)),
             commentary_busy: Arc::new(AtomicBool::new(false)),
-            oracle_busy:     Arc::new(AtomicBool::new(false)),
         })
     }
 }
@@ -458,19 +454,18 @@ async fn commentary_worker(trigger: String, data: Value, persona: String, shared
     shared.commentary_busy.store(false, Ordering::Relaxed);
 }
 
-async fn oracle_worker(
-    query:    Value,
+/// Core oracle call — shared by oracle_query Tauri command.
+/// Takes pre-snapshotted activity/convo state so lock is not held during I/O.
+async fn run_oracle(
+    message:  String,
+    history:  Vec<Value>,
+    sessions: Vec<Value>,
     ra_snap:  HashMap<String, Vec<(f64, String, String)>>,
     cv_snap:  HashMap<String, Vec<ConvoEntry>>,
-    shared:   Arc<DaemonShared>,
-) {
-    let now      = now_s();
-    let sessions = query["sessions"].as_array().cloned().unwrap_or_default();
-    let message  = query["message"].as_str().unwrap_or("").to_string();
-    let history  = query["history"].as_array().cloned().unwrap_or_default();
-    let req_id   = query["req_id"].clone();
+    sem:      &Arc<Semaphore>,
+) -> Option<String> {
+    let now = now_s();
 
-    // Build live context
     let mut activity_lines = Vec::new();
     for (sid, acts) in &ra_snap {
         let filtered: Vec<&(f64, String, String)> = acts.iter()
@@ -483,7 +478,6 @@ async fn oracle_worker(
         }
     }
 
-    // Most recently active session's last 2 turns
     let mut convo_lines = Vec::new();
     if let Some((_, turns)) = cv_snap.iter().max_by(|a, b| {
         let at = a.1.last().map(|e| e.0).unwrap_or(0.0);
@@ -515,13 +509,36 @@ async fn oracle_worker(
     let full_prompt = lines.join("\n");
 
     let (model, timeout) = if sessions.is_empty() { ("claude-haiku-4-5-20251001", 12) } else { ("claude-sonnet-4-6", 30) };
+    call_claude(full_prompt, model, &["--bare"], timeout, sem).await
+}
 
-    if let Some(reply) = call_claude(full_prompt, model, &["--bare"], timeout, &shared.sem).await {
-        let entry = serde_json::json!({"type":"oracle_response","req_id":req_id,"msg":reply,"ts":now_ms()});
-        append_out_raw(entry).await;
-        println!("[daemon] oracle → \"{}\"", &reply[..reply.len().min(80)]);
-    }
-    shared.oracle_busy.store(false, Ordering::Relaxed);
+/// Tauri command — called directly from voice.js via invoke('oracle_query', {...}).
+/// Replaces the file-polling oracle_query.json → oracle_response round-trip.
+#[tauri::command]
+pub async fn oracle_query(
+    message:  String,
+    history:  Vec<Value>,
+    req_id:   u64,
+    sessions: Vec<Value>,
+    state:    tauri::State<'_, Arc<DaemonShared>>,
+) -> Result<Value, String> {
+    // Snapshot activity/convo without holding the lock during the claude call
+    let (ra_snap, cv_snap) = {
+        let st = state.state.lock().map_err(|e| e.to_string())?;
+        let ra: HashMap<String, Vec<(f64, String, String)>> = st.recent_activity.iter()
+            .map(|(k, v)| (k.clone(), v.iter().map(|(ts, t, h, _, _)| (*ts, t.clone(), h.clone())).collect()))
+            .collect();
+        let cv: HashMap<String, Vec<ConvoEntry>> = st.session_convo.iter()
+            .map(|(k, v)| (k.clone(), v.iter().cloned().collect()))
+            .collect();
+        (ra, cv)
+    };
+
+    let reply = run_oracle(message, history, sessions, ra_snap, cv_snap, &state.sem).await
+        .ok_or_else(|| "oracle unreachable".to_string())?;
+
+    println!("[daemon] oracle_query → \"{}\"", &reply[..reply.len().min(80)]);
+    Ok(serde_json::json!({"msg": reply, "req_id": req_id}))
 }
 
 // ── Startup check ─────────────────────────────────────────────────────────────
@@ -541,8 +558,7 @@ async fn check_claude_path() -> bool {
 pub async fn daemon_loop(shared: Arc<DaemonShared>) {
     let data_dir = expand_home("~/.local/share/pixel-terminal");
     let _ = tokio::fs::create_dir_all(&data_dir).await;
-    let feed_path         = expand_home("~/.local/share/pixel-terminal/vexil_feed.jsonl");
-    let oracle_query_path = expand_home("~/.local/share/pixel-terminal/oracle_query.json");
+    let feed_path = expand_home("~/.local/share/pixel-terminal/vexil_feed.jsonl");
 
     // Startup signal (companion.js detects ⊸ online)
     append_out("\u{22b8} online").await;
@@ -563,37 +579,6 @@ pub async fn daemon_loop(shared: Arc<DaemonShared>) {
             let mut st = shared.state.lock().unwrap();
             st.feed_offset = new_offset;
             st.feed_inode  = new_inode;
-        }
-
-        // ── Oracle check (file-polling — no lock held during async I/O) ──────
-        if claude_ok && !shared.oracle_busy.load(Ordering::Relaxed) {
-            let last_oracle_mtime = { shared.state.lock().unwrap().oracle_mtime };
-            let mtime = tokio::fs::metadata(&oracle_query_path).await.ok()
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map(|d| d.as_secs_f64())
-                .unwrap_or(0.0);
-            if mtime > last_oracle_mtime {
-                { shared.state.lock().unwrap().oracle_mtime = mtime; }
-                if let Ok(content) = tokio::fs::read_to_string(&oracle_query_path).await {
-                    if let Ok(query) = serde_json::from_str::<Value>(&content) {
-                        // Snapshot state for oracle context (brief lock)
-                        let (ra_snap, cv_snap) = {
-                            let st = shared.state.lock().unwrap();
-                            let ra: HashMap<String, Vec<(f64, String, String)>> = st.recent_activity.iter()
-                                .map(|(k, v)| (k.clone(), v.iter().map(|(ts, t, h, _, _)| (*ts, t.clone(), h.clone())).collect()))
-                                .collect();
-                            let cv: HashMap<String, Vec<ConvoEntry>> = st.session_convo.iter()
-                                .map(|(k, v)| (k.clone(), v.iter().cloned().collect()))
-                                .collect();
-                            (ra, cv)
-                        };
-                        shared.oracle_busy.store(true, Ordering::Relaxed);
-                        let sh = shared.clone();
-                        tokio::spawn(oracle_worker(query, ra_snap, cv_snap, sh));
-                    }
-                }
-            }
         }
 
         if new_entries.is_empty() { continue; }
