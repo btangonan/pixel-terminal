@@ -10,7 +10,42 @@ import { $, esc } from './dom.js';
 const { listen }  = window.__TAURI__.event;
 const { invoke }  = window.__TAURI__.core;
 
-// Per-session store: Map<sessionId, Attachment[]>
+// ── Error toast ──────────────────────────────────────────
+// Floating overlay toast for attachment errors (file too large, read failed, etc.)
+// Auto-dismisses after 4s. Only one active at a time.
+
+let _toastTimer = null;
+
+function showAttachmentError(msg) {
+  let toast = document.getElementById('att-error-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'att-error-toast';
+    Object.assign(toast.style, {
+      position: 'fixed',
+      bottom: '72px',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      background: '#0d0d0d',
+      color: '#d87756',
+      border: '1px solid #555',
+      borderRadius: '0',
+      padding: '8px 16px',
+      fontSize: '12px',
+      fontFamily: 'var(--font-mono, monospace)',
+      zIndex: '9999',
+      pointerEvents: 'none',
+      whiteSpace: 'nowrap',
+    });
+    document.body.appendChild(toast);
+  }
+  toast.textContent = `⚠ ${msg}`;
+  toast.style.display = 'block';
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { toast.style.display = 'none'; }, 4000);
+}
+
+// ── Per-session store: Map<sessionId, Attachment[]>
 // Attachment: { id, name, path, mimeType, data, isImage, status: 'staged'|'sent' }
 const store = new Map();
 
@@ -105,26 +140,19 @@ async function stageFilePath(sessionId, path) {
   const isImage = isImagePath(path);
   const mimeType = guessMimeType(name);
 
-  // Guard: reject files > 20MB before reading to prevent OOM
+  // Guard: reject files > 20MB before reading to prevent OOM.
+  // Uses get_file_size_any (no path allowlist) — metadata-only, safe for any drag-drop path.
   const MAX_BYTES = 20 * 1024 * 1024;
   try {
-    const fileSize = await invoke('get_file_size', { path });
+    const fileSize = await invoke('get_file_size_any', { path });
     if (fileSize > MAX_BYTES) {
-      console.warn(`[attachments] ${name} too large (${(fileSize / 1024 / 1024).toFixed(1)} MB) — max 20 MB`);
-      // Show user-visible error in the attachment panel area
-      const container = document.getElementById('attachment-tokens');
-      if (container) {
-        const errEl = document.createElement('span');
-        errEl.className = 'att-token att-error';
-        errEl.textContent = `${name} too large (max 20 MB)`;
-        container.classList.remove('hidden');
-        container.appendChild(errEl);
-        setTimeout(() => errEl.remove(), 4000);
-      }
+      const mb = (fileSize / 1024 / 1024).toFixed(1);
+      console.warn(`[attachments] ${name} too large (${mb} MB) — max 20 MB`);
+      showAttachmentError(`${name} is too large (${mb} MB). Max 20 MB.`);
       return;
     }
   } catch (e) {
-    // get_file_size failed (e.g. path denied) — let read_file_as_base64 handle the error
+    // Metadata read failed (permissions, missing file) — let the read attempt handle it
   }
 
   let data;

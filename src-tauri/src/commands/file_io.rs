@@ -103,6 +103,16 @@ pub fn get_file_size(path: String) -> Result<u64, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Return the byte size of ANY file path — no allowlist, metadata only (no content read).
+/// Safe to expose: fs::metadata never reads file contents, only inode/stat data.
+/// Used by the attachment OOM guard for drag-dropped files from anywhere on disk.
+#[tauri::command]
+pub fn get_file_size_any(path: String) -> Result<u64, String> {
+    fs::metadata(&path)
+        .map(|m| m.len())
+        .map_err(|e| e.to_string())
+}
+
 /// Read a file as UTF-8 text.
 #[tauri::command]
 pub fn read_file_as_text(path: String) -> Result<String, String> {
