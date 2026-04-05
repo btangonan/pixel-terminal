@@ -1,0 +1,24 @@
+{
+  "ci_workflows": [],
+  "ci_framework": null,
+  "build_scripts": {
+    "dev": "python3 scripts/vexil_master.py & npm run tauri -- dev",
+    "tauri": "tauri"
+  },
+  "quality_gates": {
+    "typecheck": false,
+    "lint": false,
+    "test_run": false,
+    "coverage_threshold": false
+  },
+  "manual_qa": {
+    "present": true,
+    "file": "TEST_CHECKLIST.md",
+    "items": 35
+  },
+  "smoke_test": {
+    "file": "test_auto.cjs",
+    "automated": false,
+    "note": "Not run in CI — must be invoked manually"
+  }
+}

@@ -2,12 +2,13 @@
 
 import { $, showConfirm } from './dom.js';
 import {
-  sessions, sessionLogs, spriteRenderers, SpriteRenderer,
-  getNextIdentity, getActiveSessionId, setActiveSessionId,
-  syncOmiSessions, IDENTITY_SEQ_KEY, ANIMALS
+  sessions, sessionLogs,
+  rollFamiliarBones, assignFamiliarHue, releaseFamiliarHue,
+  getActiveSessionId, setActiveSessionId,
+  syncOmiSessions, getFamiliarRerollCount,
 } from './session.js';
-import { getProjectChar, saveProjectChar, isBuddyAnimal, getBuddyTrigger } from './companion.js';
-import { getStagedAttachments, markAttachmentsSent } from './attachments.js';
+import { getBuddyTrigger } from './companion.js';
+import { getStagedAttachments, markAttachmentsSent, cleanupSession as cleanupAttachments } from './attachments.js';
 import { getSlashCommands, isBuiltinCommand } from './slash-menu.js';
 import { pxLog } from './logger.js';
 
@@ -35,41 +36,27 @@ export function setLifecycleDeps(deps) {
 }
 
 
-async function createSession(cwd, opts = {}) {
-  const id    = crypto.randomUUID();
-  const name  = cwd.split('/').pop() || cwd;
-  // Persistent familiar: same project always gets the same character
-  const savedAnimal = await getProjectChar(cwd);
-  let charIndex;
-  if (savedAnimal !== null) {
-    const idx = ANIMALS.indexOf(savedAnimal);
-    charIndex = idx >= 0 ? idx : getNextIdentity().animalIndex;
-  } else {
-    charIndex = getNextIdentity().animalIndex;
-    // If the assigned animal matches the buddy's species, find the nearest
-    // valid one by scanning forward — one call to getNextIdentity, no
-    // sequence slots burned.
-    if (isBuddyAnimal(ANIMALS[charIndex])) {
-      let candidate = (charIndex + 1) % ANIMALS.length;
-      while (candidate !== charIndex && isBuddyAnimal(ANIMALS[candidate])) {
-        candidate = (candidate + 1) % ANIMALS.length;
-      }
-      charIndex = candidate;
-    }
-    await saveProjectChar(cwd, ANIMALS[charIndex]);
-  }
+function createSession(cwd, opts = {}) {
+  const id   = crypto.randomUUID();
+  const name = cwd ? cwd.split('/').pop() || cwd : 'untitled';
+
+  // Deterministic familiar from project path — same project always rolls same bones.
+  // Bones are never stored; always recomputed. Hue is ephemeral (resets on restart).
+  const familiar    = rollFamiliarBones(cwd, getFamiliarRerollCount(cwd));
+  const familiarHue = assignFamiliarHue(cwd || id, id);
 
   sessionLogs.set(id, { messages: [] });
 
   /** @type {Session} */
   const session = {
-    id, cwd, name, charIndex,
+    id, cwd, name, familiar, familiarHue, _familiarFrame: 0,
     status: 'idle',
     child: null,
     toolPending: {},
     readOnly: !!opts.readOnly,
     unread: false,
     tokens: 0,
+    _nimTokensAccrued: 0,  // tracks tokens already converted to nim (prevents double-award)
     _liveTokens: 0,
     _dotsPhase: 0,
     _pendingQueue: [],
@@ -89,7 +76,7 @@ async function createSession(cwd, opts = {}) {
   spawnClaude(id); // fire-and-forget — all handling is callback-based
   _deps.setStatus(id, 'waiting'); // static "waiting…" during init — no rotating words until user sends
   syncOmiSessions();
-  if (_deps.scanHistory) _deps.scanHistory(cwd);
+  if (_deps.scanHistory && cwd) _deps.scanHistory(cwd);
   return id;
 }
 
@@ -157,7 +144,6 @@ async function spawnClaude(id) {
     const child = await cmd.spawn();
     s.child = child;
     s.toolPending = {};
-    // _pendingMsg is flushed in system/init handler — Claude only reads stdin after that event
 
   } catch (err) {
     _deps.pushMessage(id, { type: 'error', text: `Failed to start Claude Code: ${err}` });
@@ -185,11 +171,11 @@ function killSession(id) {
   s._manualClose = true;
   try { s.child?.kill(); } catch (_) {}
 
-  spriteRenderers.get(id)?.destroy();
-  spriteRenderers.delete(id);
+  if (s.cwd) releaseFamiliarHue(s.cwd, id);
 
   sessions.delete(id);
   sessionLogs.delete(id);
+  cleanupAttachments(id);
   document.getElementById(`card-${id}`)?.remove();
 
   if (getActiveSessionId() === id) {
@@ -362,7 +348,10 @@ async function sendMessage(id, text) {
   if (warnIfUnknownCommand(id, raw)) return;
 
   if (!s.child) {
-    // Process still spawning — queue until system/init fires.
+    // Process still spawning — queue until Claude's stdin is ready.
+    // Claude 2.1.x does not emit system/init proactively; it emits it only after
+    // receiving the first stdin message. So messages sent after s.child is set go
+    // directly to Claude's stdin, which triggers system/init before Claude responds.
     // Don't _pushMessage yet — show it after "Ready" so log order is correct.
     s._pendingQueue.push(raw);
     _deps.setStatus(id, 'working'); // badge reacts immediately
@@ -372,10 +361,21 @@ async function sendMessage(id, text) {
   const expanded = await expandSlashCommand(raw);
   pxLog('MSG→', `id:${id.slice(0,8)} "${raw.slice(0, 80)}${raw.length > 80 ? '…' : ''}"`);
   s._lastUserMsg = raw;  // captured for vexil routing in events.js
-  const trigger = getBuddyTrigger();
-  const afterTrigger = raw.toLowerCase().startsWith(trigger) ? raw.slice(trigger.length).trimStart() : null;
+  const trigger = getBuddyTrigger();           // e.g. "vexil "
+  const triggerName = trigger.trim();           // e.g. "vexil"
+  // Escape any regex special chars in buddy name (e.g. "Mr. Robot", "C++")
+  const triggerEscaped = triggerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const lowerRaw = raw.toLowerCase();
+  // Match "vexil <message>" (start) OR "hey vexil" / "vexil?" (word anywhere)
+  const startsWithTrigger = lowerRaw.startsWith(trigger);
+  const containsTrigger   = !startsWithTrigger && new RegExp(`\\b${triggerEscaped}\\b`).test(lowerRaw);
+  const afterTrigger = startsWithTrigger ? raw.slice(trigger.length).trimStart()
+                      : containsTrigger  ? raw
+                      : null;
   // Vexil turn only for conversational messages — not slash command invocations (skill output stays in session log)
   s._vexilTurn = afterTrigger !== null && !afterTrigger.startsWith('/');
+  // Precompute confirmedVexil so events.js doesn't re-parse the same text
+  s._confirmedVexil = s._vexilTurn;
   _deps.pushMessage(id, { type: 'user', text: raw }); // always show user message in session log
   s._workingPhase = 'thinking';
   _deps.setStatus(id, 'working');

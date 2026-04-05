@@ -12,13 +12,13 @@
  * species not yet drawn as pixel art).
  */
 
-import { SPRITE_DATA } from './session.js';
+import { SPRITE_DATA, getActiveSessionId } from './session.js';
+import { SPRITES, EYE_CHARS, DEFAULT_EYE, HATS, renderFrame } from './ascii-sprites.js';
 
 const { invoke } = window.__TAURI__.core;
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
 
-const BUDDY_PATH   = `${window.__TAURI_INTERNALS__?.metadata?.homeDir ?? '/Users/' + 'bradleytangonan'}/.config/pixel-terminal/buddy.json`;
 const LINT_PATH    = '/tmp/vexil_lint.json';
 const APPROVAL_PATH = '/tmp/vexil_approval.json';
 const HOOK_GATE_PATH      = '/tmp/pixel_hook_gate.json';
@@ -86,6 +86,7 @@ const DENY_LABELS = {
 let buddy = null;
 let _companionInitialized = false;  // singleton guard — species sync runs exactly once
 let _vexilLogListener = null;       // registered by voice.js to re-render the Vexil tab
+let _oracleResponseListener = null; // registered by voice.js for pre-session ORACLE chat
 let _lastLintSeen = '';       // prevent re-showing same lint event
 let _lastOpsKey   = '';       // prevent re-showing same ops report
 let _approvalPending = false;
@@ -163,34 +164,115 @@ function injectCompanionPanel() {
   });
 }
 
-// ── Sprite rendering ──────────────────────────────────────────────────────────
+// ── ASCII sprite rendering + animation ───────────────────────────────────────
+
+let _asciiAnimTimer   = null;  // idle→fidget cycle timer
+let _asciiActionTimer = null;  // action frame auto-return timer
+let _asciiPre         = null;  // the live <pre> element
+let _asciiState       = 'idle'; // 'idle' | 'fidget' | 'action'
+let _asciiSpecies     = 'duck';
+let _asciiEye         = DEFAULT_EYE;
+let _asciiHat         = 'none';
+
+function getEyeChar(buddy) {
+  // buddy.eyes may be set by Claude Code sync (e.g. 'sleepy', 'star')
+  // or absent — fall back to dot
+  const raw = buddy?.eyes ?? 'dot';
+  return EYE_CHARS[raw] ?? DEFAULT_EYE;
+}
+
+function updateAsciiFrame(frameIdx) {
+  if (!_asciiPre) return;
+  const lines = renderFrame(_asciiSpecies, frameIdx, _asciiEye, _asciiHat);
+  _asciiPre.textContent = lines.join('\n');
+}
+
+function scheduleNextFidget() {
+  clearTimeout(_asciiAnimTimer);
+  if (!_asciiPre) return;  // panel gone — stop recursing
+  // Idle for 3–8 seconds then briefly fidget
+  const delay = 3000 + Math.random() * 5000;
+  _asciiAnimTimer = setTimeout(() => {
+    if (!_asciiPre) return;  // panel removed between schedule and fire
+    if (_asciiState !== 'idle') { scheduleNextFidget(); return; }
+    _asciiState = 'fidget';
+    updateAsciiFrame(1);
+    // Return to idle after 350ms
+    setTimeout(() => {
+      _asciiState = 'idle';
+      updateAsciiFrame(0);
+      scheduleNextFidget();
+    }, 350);
+  }, delay);
+}
+
+/** Called from events.js on tool_use — briefly plays action frame */
+export function triggerAsciiAction() {
+  if (!_asciiPre || _asciiState === 'action') return;
+  // Only show action frame ~40% of tool calls (avoids spam on rapid tools)
+  if (Math.random() > 0.4) return;
+  clearTimeout(_asciiActionTimer);
+  clearTimeout(_asciiAnimTimer);
+  _asciiState = 'action';
+  updateAsciiFrame(2);
+  _asciiActionTimer = setTimeout(() => {
+    _asciiState = 'idle';
+    updateAsciiFrame(0);
+    scheduleNextFidget();
+  }, 600);
+}
 
 function renderCompanionSprite() {
+  // ── Floating pixel sprite (bottom-right bubble) ──────────────────────────
   const spriteWrap = document.getElementById('companion-sprite');
-  if (!spriteWrap || !buddy) return;
+  if (spriteWrap && buddy) {
+    const spriteKey = BUDDY_SPRITE_MAP[buddy.species] ?? 'cat';
+    const data = SPRITE_DATA[spriteKey];
+    if (data) {
+      spriteWrap.innerHTML = '';
+      const canvas = document.createElement('canvas');
+      canvas.width = 48; canvas.height = 48;
+      canvas.className = 'companion-sprite-canvas';
+      spriteWrap.appendChild(canvas);
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      img.onload = () => {
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(img, 0, 0, 16, 16, 0, 0, 48, 48);
+      };
+      img.src = data;
+    }
+  }
 
-  const spriteKey = BUDDY_SPRITE_MAP[buddy.species] ?? 'cat';
-  const data = SPRITE_DATA[spriteKey];
-  if (!data) return;
+  // ── ASCII buddy in sidebar panel ──────────────────────────────────────────
+  const panel = document.getElementById('vexil-ascii');
+  if (!panel || !buddy) return;
 
-  // Clear any previously rendered canvas before appending a new one
-  spriteWrap.innerHTML = '';
+  // Resolve display species from personality text first (same logic as bio label).
+  // buddy.species is the Claude Code sync value (e.g. 'duck'); the personality
+  // text (the "soul") is authoritative for display — it may say "dragon".
+  const KNOWN_ASCII_SPECIES = Object.keys(SPRITES);
+  const personalityLower = (buddy.personality ?? '').toLowerCase();
+  const displaySpecies = KNOWN_ASCII_SPECIES.find(s => personalityLower.includes(s)) ?? buddy.species;
+  _asciiSpecies = SPRITES[displaySpecies] ? displaySpecies : 'duck';
+  _asciiEye     = getEyeChar(buddy);
+  _asciiHat     = buddy.hat ?? 'none';
 
-  // Simple canvas-based render: idle frame only (frame 0)
-  const canvas = document.createElement('canvas');
-  canvas.width = 48;
-  canvas.height = 48;
-  canvas.className = 'companion-sprite-canvas';
-  spriteWrap.appendChild(canvas);
+  // Clear previous animation
+  clearTimeout(_asciiAnimTimer);
+  clearTimeout(_asciiActionTimer);
+  _asciiState = 'idle';
 
-  const ctx = canvas.getContext('2d');
-  const img = new Image();
-  img.onload = () => {
-    // Sheet is 64×16 (4 frames × 16×16). Frame 0 = x:0, 16×16 → render at 3x (48×48)
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(img, 0, 0, 16, 16, 0, 0, 48, 48);
-  };
-  img.src = data;
+  // Build <pre>
+  panel.innerHTML = '';
+  const pre = document.createElement('pre');
+  pre.className = 'vexil-ascii-art';
+  panel.appendChild(pre);
+  _asciiPre = pre;
+
+  // Render initial idle frame and start animation
+  updateAsciiFrame(0);
+  scheduleNextFidget();
 }
 
 // ── Bubble display ────────────────────────────────────────────────────────────
@@ -302,6 +384,7 @@ async function pollHookGate() {
   try {
     gate = JSON.parse(raw);
   } catch {
+    setTimeout(pollHookGate, 50);  // partial write in flight — retry once after 50ms
     return;
   }
   if (!gate?.id || !gate?.msg) return;
@@ -334,6 +417,7 @@ async function pollLintFile() {
   try {
     lint = JSON.parse(raw);
   } catch {
+    setTimeout(pollLintFile, 50);  // partial write in flight — retry once after 50ms
     return;
   }
 
@@ -458,35 +542,37 @@ async function _writeProjectChar(cwd, animalName) {
   try {
     const home = await getHomeDir();
     const charPath = `${home}/${PROJECT_CHARS_FILENAME}`;
-    const cwdB64  = btoa(cwd);
-    const pathB64 = btoa(charPath);
-    const script = `
-import json, base64, os
-p   = base64.b64decode('${pathB64}').decode()
-cwd = base64.b64decode('${cwdB64}').decode()
-data = json.load(open(p)) if os.path.exists(p) else {}
-data[cwd] = '${animalName}'
-with open(p, 'w') as f:
-    json.dump(data, f, indent=2)
-`.trim();
-    const { Command } = window.__TAURI__.shell;
-    const result = await new Command('python3', ['-c', script]).execute();
-    if (result.code !== 0) console.warn('saveProjectChar failed:', result.stderr);
+    let chars = {};
+    try {
+      const raw = await invoke('read_file_as_text', { path: charPath });
+      chars = JSON.parse(raw);
+    } catch { /* file doesn't exist yet — start empty */ }
+    chars[cwd] = animalName;
+    await invoke('write_file_as_text', { path: charPath, content: JSON.stringify(chars, null, 2) });
   } catch (e) { console.warn('saveProjectChar failed:', e); }
 }
 
 // ── Lint event log (for #vexil-monitor panel) ─────────────────────────────────
 
-const LINT_LOG = [];  // max 100 entries, newest first
+// Per-session log: Map<sessionId, [{ts, state, msg}]>, max 100 entries per session
+const LINT_LOG = new Map();
 
 function addToLintLog(state, msg) {
+  const sessionId = getActiveSessionId();
+  if (!sessionId) return;
   const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  LINT_LOG.push({ ts, state, msg: msg ?? '' });
-  if (LINT_LOG.length > 100) LINT_LOG.shift(); // drop oldest when capped
-  if (_vexilLogListener) _vexilLogListener(LINT_LOG);
+  if (!LINT_LOG.has(sessionId)) LINT_LOG.set(sessionId, []);
+  const log = LINT_LOG.get(sessionId);
+  log.push({ ts, state, msg: msg ?? '' });
+  if (log.length > 100) log.shift(); // drop oldest when capped
+  if (_vexilLogListener) _vexilLogListener(log);
 }
 
+export function getLintLogForSession(id) { return LINT_LOG.get(id) ?? []; }
+export function clearLintLog(id) { LINT_LOG.set(id, []); }
+
 export function setVexilLogListener(cb) { _vexilLogListener = cb; }
+export function setOracleResponseListener(cb) { _oracleResponseListener = cb; }
 export function addToVexilLog(state, msg) {
   addToLintLog(state, msg);
   invoke('js_log', { msg: `[vexil-reply] state:${state} "${msg?.slice(0,80)}"` }).catch(() => {});
@@ -497,7 +583,7 @@ export function addToVexilLog(state, msg) {
 
 async function pollMasterOut() {
   try {
-    const raw = await invoke('read_file_as_text', { path: '/tmp/vexil_master_out.jsonl' });
+    const raw = await invoke('read_file_as_text', { path: '~/.local/share/pixel-terminal/vexil_master_out.jsonl' });
     const lines = raw.split('\n').filter(Boolean);
     if (lines.length <= _masterOutOffset) return;
     const newLines = lines.slice(_masterOutOffset);
@@ -505,7 +591,10 @@ async function pollMasterOut() {
     for (const line of newLines) {
       try {
         const entry = JSON.parse(line);
-        if (entry.msg) {
+        if (entry.type === 'oracle_response') {
+          // Route to pre-session oracle chat — do NOT add to lint log
+          if (_oracleResponseListener) _oracleResponseListener(entry);
+        } else if (entry.msg) {
           addToLintLog('vexil', entry.msg);
           invoke('js_log', { msg: `[vexil-master] "${entry.msg?.slice(0,80)}"` }).catch(() => {});
           // bubble suppressed — log tab is the surface
@@ -522,10 +611,6 @@ export async function initCompanion() {
   _companionInitialized = true;
   await loadBuddy();
 
-  // Tab is always "BUDDY" — companion name lives in the bio panel, not the tab
-  const vexilTabBtn = document.querySelector('.voice-tab[data-vtab="vexil"]');
-  if (vexilTabBtn) vexilTabBtn.textContent = 'BUDDY';
-
   // Populate bio panel with real buddy identity
   // Species: prefer term extracted from personality text (soul > bones for display)
   const bio = document.getElementById('vexil-bio');
@@ -539,8 +624,7 @@ export async function initCompanion() {
     const rarityStr = buddy.rarity ? `${buddy.rarity} ` : '';
     bio.querySelector('.vexil-bio-name').textContent =
       `${buddy.name} · ${rarityStr}${displaySpecies}`.trim();
-    bio.querySelector('.vexil-bio-personality').textContent = buddy.personality ?? '';
-    bio.classList.remove('hidden'); // bio always visible at panel bottom — not tab-toggled
+    // bio starts visible (no hidden class) — placeholder text already shown
   }
 
   // Sync buddy species with Claude Code companion — buddy.json is sole owner of this write
@@ -565,23 +649,6 @@ export async function initCompanion() {
       buddyData.companionSeed = COMPANION_SEED;
       await invoke('write_file_as_text', { path: buddyPath, content: JSON.stringify(buddyData, null, 2) });
 
-      // Re-assign any project that held the old species so it doesn't
-      // collide with the new buddy on next session open
-      if (oldSpecies && oldSpecies !== derivedSpecies) {
-        try {
-          const charPath = `${home}/${PROJECT_CHARS_FILENAME}`;
-          const charRaw  = await invoke('read_file_as_text', { path: charPath });
-          const chars    = JSON.parse(charRaw);
-          const dirty    = Object.entries(chars).filter(([, v]) => v === oldSpecies);
-          if (dirty.length > 0) {
-            dirty.forEach(([k]) => delete chars[k]);
-            _projectCharsSaveQueue = _projectCharsSaveQueue.then(async () => {
-              await invoke('write_file_as_text', { path: charPath, content: JSON.stringify(chars, null, 2) });
-            });
-            await _projectCharsSaveQueue;
-          }
-        } catch { /* project-chars.json may not exist yet — fine */ }
-      }
       } // end if species mismatch
     } // end else (not syncedFrom claude-code)
   } catch (e) {
@@ -620,7 +687,7 @@ export async function initCompanion() {
 
   // Seed master output offset — don't re-show old entries from previous launch
   try {
-    const raw = await invoke('read_file_as_text', { path: '/tmp/vexil_master_out.jsonl' });
+    const raw = await invoke('read_file_as_text', { path: '~/.local/share/pixel-terminal/vexil_master_out.jsonl' });
     _masterOutOffset = raw.split('\n').filter(Boolean).length;
   } catch { /* file doesn't exist yet — fine */ }
 
@@ -630,7 +697,9 @@ export async function initCompanion() {
     await pollLintFile();
   }, POLL_INTERVAL);
   setInterval(pollOpsReport, 5000);   // ops report slower — less frequent events
-  setInterval(pollMasterOut, 5000);   // master proactive commentary
+  setInterval(pollMasterOut, 1500);   // master proactive commentary
+
+  document.dispatchEvent(new CustomEvent('pixel:companion-ready', { detail: { name: buddy?.name } }));
 }
 
 // Returns the lowercase trigger prefix for addressing the companion (e.g. "vexil ")

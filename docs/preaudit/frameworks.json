@@ -1,0 +1,39 @@
+{
+  "frontend": {
+    "framework": null,
+    "bundler": null,
+    "note": "Vanilla JS ES modules, Tauri serves src/ directly — no build step",
+    "libraries": {
+      "marked": "^17.0.5 (markdown parsing)",
+      "dompurify": "3.3.3 (vendored in src/purify.min.js — XSS sanitization)",
+      "@tauri-apps/plugin-dialog": "^2.6.0",
+      "@tauri-apps/plugin-shell": "^2.3.5"
+    }
+  },
+  "backend": {
+    "framework": "Tauri 2",
+    "async_runtime": "Tokio",
+    "ipc_commands": [
+      "read_file_as_base64(path: String)",
+      "read_file_as_text(path: String)",
+      "write_file_as_text(path: String, content: String)",
+      "append_line_to_file(path: String, line: String)",
+      "read_slash_command_content(name: String)",
+      "read_slash_commands()",
+      "scan_session_history(project_path: String)",
+      "load_session_history(file_path: String)",
+      "send_signal(pid: u32, signal: i32)",
+      "js_log(msg: String)"
+    ],
+    "ws_server": "ws://127.0.0.1:9876 (voice bridge)"
+  },
+  "shell_spawns": {
+    "claude": "/opt/homebrew/bin/claude (args: true)",
+    "sh": "/bin/sh (args: true)",
+    "python3": "/opt/homebrew/bin/python3 (args: true)"
+  },
+  "capabilities": {
+    "csp": null,
+    "dangerous_note": "CSP is explicitly null — no content security policy enforced"
+  }
+}

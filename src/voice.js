@@ -5,7 +5,7 @@ import { sessions, getActiveSessionId } from './session.js';
 import { sendMessage } from './session-lifecycle.js';
 import { pushMessage } from './messages.js';
 import { setActiveSession } from './cards.js';
-import { LINT_LOG, setVexilLogListener } from './companion.js';
+import { getLintLogForSession, clearLintLog, setVexilLogListener, setOracleResponseListener, companionBuddy } from './companion.js';
 import { clearSentAttachments } from './attachments.js';
 
 const { Command } = window.__TAURI__.shell;
@@ -56,11 +56,16 @@ const STATE_CLASS = {
   vexil:          'vexil-entry--buddy',
 };
 
+function fmtTs(ts) {
+  const m = String(ts).match(/(\d{1,2}:\d{2})/);
+  return m ? `[${m[1]}]` : `[${ts}]`;
+}
+
 function renderVexilLog(entries) {
   if (!$.vexilLog) return;
   $.vexilLog.innerHTML = entries.map(e => {
     const cls = STATE_CLASS[e.state] ?? '';
-    return `<div class="vexil-entry ${cls}"><span class="vexil-ts">${escapeHtml(e.ts)}</span>${escapeHtml(e.msg)}</div>`;
+    return `<div class="vexil-entry ${cls}"><span class="vexil-ts">${escapeHtml(fmtTs(e.ts))}</span>${escapeHtml(e.msg)}</div>`;
   }).join('');
   // Oldest first in array — scroll to bottom so latest is visible (matches session log flow)
   $.vexilLog.scrollTop = $.vexilLog.scrollHeight;
@@ -75,8 +80,13 @@ function initVexilTabs() {
     if ($.voiceLog)        $.voiceLog.classList.toggle('hidden',        target !== 'voice');
     if ($.vexilLog)        $.vexilLog.classList.toggle('hidden',        target !== 'vexil');
     if ($.attachmentsPanel) $.attachmentsPanel.classList.toggle('hidden', target !== 'files');
-    // vexil-bio is always visible at bottom — not tab-toggled
-    if (target === 'vexil') renderVexilLog(LINT_LOG);
+    const bio = document.getElementById('vexil-bio');
+    if (bio) bio.classList.toggle('hidden', target !== 'vexil');
+    const header = document.getElementById('voice-log-header');
+    if (header) header.classList.toggle('oracle-active', target === 'vexil');
+    // Only re-render lint log when a session is active — pre-session oracle content must not be wiped
+    if (target === 'vexil' && sessions.size > 0) renderVexilLog(getLintLogForSession(getActiveSessionId()));
+    document.dispatchEvent(new CustomEvent('pixel:vexil-tab-changed', { detail: { tab: target } }));
   }
 
   tabs.forEach(btn => btn.addEventListener('click', () => showTab(btn.dataset.vtab)));
@@ -84,12 +94,19 @@ function initVexilTabs() {
   // Initialize to BUDDY tab (matches active class in HTML)
   showTab('vexil');
 
+  // When user switches session, flip buddy log to that session's entries
+  document.addEventListener('pixel:session-changed', (e) => {
+    if (_vexilTabActive) renderVexilLog(getLintLogForSession(e.detail.id));
+    const bio = document.getElementById('vexil-bio');
+    if (bio) bio.classList.toggle('hidden', !_vexilTabActive);
+  });
+
   // Tab-aware CLR
   $.btnClearVoiceLog?.addEventListener('click', () => {
     const active = document.querySelector('.voice-tab.active')?.dataset.vtab;
     if (active === 'vexil') {
-      LINT_LOG.length = 0;
-      renderVexilLog(LINT_LOG);
+      clearLintLog(getActiveSessionId());
+      renderVexilLog([]);
     } else if (active === 'files') {
       clearSentAttachments();
     } else {
@@ -185,6 +202,111 @@ function resolveSession(ref) {
     if (s.name.toLowerCase().includes(needle)) return id;
   }
   return getActiveSessionId();
+}
+
+// ── Oracle pre-session chat ────────────────────────────────
+const ORACLE_QUERY_PATH = '~/.local/share/pixel-terminal/oracle_query.json';
+
+function initOraclePreChat() {
+  const wrap  = $.oraclePreChat;
+  const input = $.oracleInput;
+  if (!wrap || !input) return;
+
+  let _reqId = Date.now(); // timestamp-based start prevents cross-session req_id=1 collision
+  let _pendingReqId  = null;
+  let _pendingMsg    = '';   // user message awaiting oracle response (for history)
+  let _thinkingEl    = null;
+  let _history       = [];  // [{role, content}] rolling last 6
+
+  function setVisible() {
+    wrap.classList.add('hidden');
+  }
+
+  const _oracleChatLog = document.getElementById('oracle-chat-log');
+  function appendEntry(text, cls) {
+    if (!_oracleChatLog) return null;
+    const el = document.createElement('div');
+    el.className = cls;
+    el.textContent = text;
+    _oracleChatLog.appendChild(el);
+    _oracleChatLog.scrollTop = _oracleChatLog.scrollHeight;
+    return el;
+  }
+
+  async function submit() {
+    const text = input.value.trim();
+    if (!text || _pendingReqId !== null) return;
+    input.value = '';
+
+    appendEntry(text, 'oracle-user-msg');
+    _thinkingEl = appendEntry('· · ·', 'oracle-thinking');
+
+    const reqId = ++_reqId;
+    _pendingReqId = reqId;
+    _pendingMsg = text;
+
+    try {
+      await invoke('write_file_as_text', {
+        path: ORACLE_QUERY_PATH,
+        content: JSON.stringify({
+          message: text,
+          history: _history.slice(-6),
+          req_id: reqId,
+          sessions: [...sessions.values()].map(s => ({ name: s.name, cwd: s.cwd })),
+        }),
+      });
+    } catch (_) {
+      if (_thinkingEl) { _thinkingEl.remove(); _thinkingEl = null; }
+      _pendingReqId = null;
+      appendEntry('(oracle unreachable)', 'oracle-thinking');
+    }
+  }
+
+  setOracleResponseListener((entry) => {
+    if (entry.req_id !== _pendingReqId) return;
+    if (_thinkingEl) { _thinkingEl.remove(); _thinkingEl = null; }
+    _pendingReqId = null;
+
+    const ts = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+    const el = document.createElement('div');
+    el.className = 'vexil-entry vexil-entry--buddy';
+    el.innerHTML = `<span class="vexil-ts">[${ts}]</span>${escapeHtml(entry.msg)}`;
+    _oracleChatLog?.appendChild(el);
+    if (_oracleChatLog) requestAnimationFrame(() => { _oracleChatLog.scrollTop = _oracleChatLog.scrollHeight; });
+
+    _history.push({ role: 'user', content: _pendingMsg });
+    _history.push({ role: 'oracle', content: entry.msg });
+    if (_history.length > 6) _history = _history.slice(-6);
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); submit(); }
+  });
+  $.oracleSend?.addEventListener('click', submit);
+
+  document.addEventListener('pixel:session-changed', setVisible);
+  document.addEventListener('pixel:vexil-tab-changed', setVisible);
+  setVisible();
+
+  // Post intro once — only after companion is ready AND a session is active
+  let _introPosted = false;
+  let _companionName = null;
+
+  function _maybePostIntro() {
+    if (_introPosted || !_companionName) return;
+    _introPosted = true;
+    appendEntry(`address me as "${_companionName}" if you want my opinion.`, 'vexil-entry vexil-entry--buddy oracle-intro');
+  }
+
+  document.addEventListener('pixel:companion-ready', (e) => {
+    _companionName = e.detail?.name || companionBuddy?.name;
+    // Only post if a session is already active when companion loads
+    if (getActiveSessionId()) _maybePostIntro();
+  }, { once: true });
+
+  document.addEventListener('pixel:session-changed', () => {
+    _maybePostIntro();
+  });
 }
 
 // ── Init (called once from bootstrap) ──────────────────────
@@ -303,4 +425,7 @@ export function initVoice() {
   // Vexil chat log tab
   initVexilTabs();
   setVexilLogListener(renderVexilLog);
+
+  // Oracle pre-session chat
+  initOraclePreChat();
 }

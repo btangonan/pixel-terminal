@@ -1,0 +1,428 @@
+/* ── Session Card ─────────────────────────── */
+
+.session-card {
+  border-left: 2px solid transparent;
+  padding: 2px 10px 2px 0;
+  cursor: pointer;
+  transition: border-color 0.1s, background 0.15s;
+  position: relative;
+  background: linear-gradient(to left, rgba(255,255,255,0.03), transparent);
+}
+.session-card:hover { border-right-color: var(--border-hi); }
+.session-card.active {
+  border-left: 2px solid var(--accent);
+  outline: 1px solid #444;
+  outline-offset: -1px;
+  background: transparent;
+}
+
+.session-card-top {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.session-card-info {
+  flex: 1;
+  overflow: hidden;
+}
+
+.session-card-name {
+  font-size: var(--fs-lg);
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: var(--lh-tight);
+}
+
+.session-card-status {
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+}
+
+.session-card-tokens {
+  font-size: var(--fs-sm);
+  color: var(--text-mid);
+  letter-spacing: 0.3px;
+  line-height: var(--lh-tight);
+}
+
+/* Inline status badge — idle/error only */
+.card-badge {
+  font-size: var(--fs-xs);
+  padding: 1px 4px;
+  border: 1px solid var(--border-hi);
+  color: var(--text-mute);
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+  align-self: center;
+  font-family: var(--font);
+}
+.card-badge.error   { border-color: var(--error-col); color: var(--error-col); }
+.card-badge.unread  { border-color: var(--unread);    color: var(--unread); }
+.card-badge.working { border-color: transparent; color: var(--text-dim); width: 28px; overflow: hidden; }
+.card-badge.waiting { border-color: transparent; color: var(--text-mute); }
+.card-badge.stale   { border-color: transparent; color: var(--text-mute); opacity: 0.5; }
+@keyframes badge-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}
+
+.session-card-kill {
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  background: transparent;
+  border: none;
+  color: var(--text-mid);
+  font-size: var(--fs-lg);
+  cursor: pointer;
+  padding: 1px 3px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.session-card:hover .session-card-kill { opacity: 1; }
+.session-card:has(.sprite-wrap:hover) .session-card-kill { opacity: 0; pointer-events: none; }
+.session-card-kill:hover { color: var(--accent); }
+
+/* ═══════════════════════════════════════════
+   PIXEL SPRITES — canvas renders from pixel-agents PNGs
+   Only color elements in the UI.
+   ═══════════════════════════════════════════ */
+
+canvas.sprite-canvas {
+  image-rendering: pixelated;
+  display: block;
+  flex-shrink: 0;
+  filter: saturate(1.1); /* global micro-boost — adds vibrancy for all sprites on dark bg */
+}
+
+.sprite-wrap {
+  width: 60px;
+  height: 60px;
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  position: relative;
+}
+
+.sprite-wrap pre.familiar-pre {
+  font-size: 6px;
+  line-height: 1.1;
+  font-weight: 700;
+  margin: 0;
+  padding: 0;
+  white-space: pre;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  user-select: none;
+  text-align: center;
+}
+
+.sprite-wrap pre.familiar-pre[data-species="cactus"] {
+  font-size: 5px;
+}
+
+/* ══════════════════════════════════════════════════════════
+   FAMILIAR PROFILE CARD
+   ══════════════════════════════════════════════════════════ */
+
+/* "about me" overlay — appears over the familiar sprite on card hover */
+.familiar-view-btn {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  border: none;
+  color: var(--accent);
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.5px;
+  line-height: 1.4;
+  text-align: center;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.sprite-wrap:hover .familiar-view-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+
+/* Overlay backdrop */
+.fc-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* Card container */
+.fc-card {
+  background: var(--bg2);
+  border: 1px solid var(--border-hi);
+  width: 360px;
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  overflow: hidden;
+}
+
+/* Header */
+.fc-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 6px 10px 5px;
+  border-bottom: 1px solid var(--border);
+}
+
+.fc-species {
+  font-size: var(--fs-lg);
+  color: var(--logo-orange);
+  letter-spacing: 1px;
+  font-weight: normal;
+}
+
+.fc-rarity {
+  font-size: var(--fs-xs);
+  color: var(--fc-rarity-color, #555);
+  letter-spacing: 0.5px;
+}
+
+.fc-type {
+  width: 100%;
+  font-size: var(--fs-xs);
+  color: var(--text-mid);
+  letter-spacing: 0.5px;
+  padding-top: 2px;
+}
+
+/* Body: 2-column */
+.fc-body {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Left column */
+.fc-left {
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 8px 6px;
+  gap: 6px;
+}
+
+.fc-sprite {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--accent);
+  white-space: pre;
+  margin: 0;
+}
+
+.fc-left-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
+/* Right column */
+.fc-right {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px 6px;
+  gap: 6px;
+}
+
+.fc-stats-label {
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  margin-bottom: 2px;
+}
+
+.fc-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fc-stat-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fc-stat-name {
+  font-size: var(--fs-xs);
+  color: var(--text-mid);
+  width: 80px;
+  flex-shrink: 0;
+  letter-spacing: 0.3px;
+}
+
+.fc-stat-bar {
+  flex: 1;
+  height: 5px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.fc-stat-fill {
+  height: 100%;
+  background: var(--fc-rarity-color, #555);
+  transition: width 0.3s ease;
+}
+
+.fc-stat-val {
+  font-size: var(--fs-xs);
+  color: var(--text-mid);
+  width: 24px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.fc-right-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+  letter-spacing: 0.3px;
+  margin-top: auto;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+/* Footer */
+.fc-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px;
+}
+
+.fc-shiny {
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+  letter-spacing: 0.5px;
+}
+
+.fc-shiny--active {
+  color: #ffd700;
+  text-shadow: 0 0 6px rgba(255, 215, 0, 0.5);
+}
+
+/* Re-roll slot + button */
+.fc-reroll-slot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fc-reroll-btn {
+  background: none;
+  border: 1px solid var(--border-hi);
+  color: var(--text-mid);
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+.fc-reroll-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.fc-reroll-btn--locked,
+.fc-reroll-btn:disabled {
+  color: #333;
+  border-color: #252525;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Re-roll confirm dialog */
+.fc-confirm {
+  background: var(--bg-panel, #111);
+  border: 1px solid var(--border-hi);
+  padding: 22px 24px 18px;
+  min-width: 280px;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.fc-confirm-title {
+  font-size: var(--fs-base);
+  color: var(--accent);
+  letter-spacing: 1.5px;
+}
+.fc-confirm-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fc-confirm-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-xs);
+}
+.fc-confirm-label {
+  color: var(--text-mid);
+  letter-spacing: 0.5px;
+}
+.fc-confirm-val {
+  color: var(--accent);
+  letter-spacing: 0.5px;
+}
+.fc-confirm-warning {
+  font-size: var(--fs-xs);
+  color: #c0392b;
+  letter-spacing: 0.3px;
+  border-left: 2px solid #c0392b;
+  padding-left: 8px;
+}
+.fc-confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.fc-confirm-btn {
+  background: none;
+  border: 1px solid var(--border-hi);
+  color: var(--text-mid);
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+.fc-confirm-btn--go {
+  color: #c0392b;
+  border-color: #c0392b;
+}
+.fc-confirm-btn--go:hover {
+  background: #c0392b;
+  color: #fff;
+}
+.fc-confirm-btn--cancel:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}

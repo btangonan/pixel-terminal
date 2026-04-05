@@ -138,7 +138,10 @@ async function stageFilePath(sessionId, path) {
     originalHeight,
     status: 'staged',
   };
-  if (!store.has(sessionId)) store.set(sessionId, []);
+  // Guard: session may have been killed while awaiting the IPC read above.
+  // store.delete(sessionId) fires synchronously in killSession — if it ran,
+  // store.has() is false and we must NOT re-create the entry (zombie leak).
+  if (!store.has(sessionId)) return;
   store.get(sessionId).push(att);
   renderAttachmentTokens();
   renderAttachmentPanel();
@@ -315,6 +318,14 @@ function wireContextMenu() {
     }
     hideCtxMenu();
   });
+}
+
+// ── Destroy all attachments for a session (call on session kill) ─────────────
+
+export function cleanupSession(sessionId) {
+  store.delete(sessionId);
+  renderAttachmentTokens();
+  renderAttachmentPanel();
 }
 
 // ── Clear sent attachments (called by FILES tab CLR button in voice.js) ──────

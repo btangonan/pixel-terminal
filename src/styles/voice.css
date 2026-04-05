@@ -1,0 +1,201 @@
+/* ── Omi voice bridge indicator / toggle ─── */
+#omi-indicator {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #555;                    /* gray = no mic connected */
+  display: inline-block;
+  flex-shrink: 0;
+  align-self: center;
+  margin-left: 6px;
+  transition: background 0.4s;
+  /* button reset */
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+#omi-indicator.connected {
+  background: #4fa3ff;              /* blue = mic/ble connected */
+}
+
+/* ── Always-on mic toggle ─── */
+#always-on-btn {
+  display: none;
+}
+
+/* ── Voice log transcript panel ─── */
+#voice-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 5px;
+  border-bottom: 1px solid var(--border);
+}
+#voice-log-header.oracle-active {
+  border-bottom-color: color-mix(in srgb, var(--companion-hue, #d87756) 35%, transparent);
+  flex-shrink: 0;
+}
+#voice-log-tabs {
+  display: flex;
+  gap: 2px;
+}
+.voice-tab {
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-mid);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  cursor: pointer;
+  padding: 1px 5px;
+  letter-spacing: 0.05em;
+  opacity: 0.65;
+  transition: color 0.15s, border-color 0.15s, opacity 0.15s;
+}
+.voice-tab:hover { opacity: 1; color: var(--accent); }
+.voice-tab.active {
+  color: var(--accent);
+  border-color: var(--border-hi);
+  opacity: 1;
+}
+#vexil-tab-btn {
+  color: var(--text-mid);
+}
+#vexil-tab-btn.active {
+  color: var(--accent);
+  border-color: var(--border-hi);
+}
+#btn-clear-voice-log {
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--accent);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: 0.5;
+}
+#btn-clear-voice-log:hover { opacity: 1; }
+#voice-log {
+  flex: 1 1 40%;
+  min-height: 0;        /* allows flex item to shrink below content size */
+  overflow-y: auto;
+  padding: 5px 8px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+  color: var(--text-mute);
+}
+#voice-log.hidden { display: none; }
+#voice-log::-webkit-scrollbar { width: 3px; }
+#voice-log::-webkit-scrollbar-track { background: transparent; }
+#voice-log::-webkit-scrollbar-thumb { background: var(--border-hi); }
+.voice-entry { word-break: break-word; }
+.voice-entry .ts {
+  color: var(--text-mute);
+  margin-right: 5px;
+  opacity: 0.5;
+  font-size: var(--fs-xs);
+}
+.voice-entry.dispatched { color: var(--text); }
+.voice-entry.dispatched .ts { opacity: 0.9; }
+
+/* ── Vexil chat log panel ─── */
+#oracle-chat-log {
+  overflow-y: auto;
+  padding: 5px 8px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+  max-height: 40%;
+  flex-shrink: 0;
+}
+#vexil-log {
+  flex: 1 1 40%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 5px 8px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+  color: var(--text-mute);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+#vexil-log.hidden { display: none; }
+#vexil-log::-webkit-scrollbar { width: 3px; }
+#vexil-log::-webkit-scrollbar-track { background: transparent; }
+#vexil-log::-webkit-scrollbar-thumb { background: var(--border-hi); }
+.vexil-entry { word-break: break-word; color: var(--text-main, #fff); }
+.vexil-ts {
+  opacity: 0.45;
+  margin-right: 5px;
+  font-size: var(--fs-xs);
+}
+.vexil-entry--blocked { color: #ff6b6b; }
+.vexil-entry--warn    { color: #ffa94d; }
+.vexil-entry--buddy   { color: var(--companion-hue, #FFDD44); }
+
+/* ── Oracle pre-session chat ─── */
+#oracle-pre-chat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: var(--sp-3);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#oracle-pre-chat.hidden { display: none; }
+#oracle-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--fs-base);
+  padding: var(--sp-2);
+  outline: none;
+  line-height: var(--lh-base);
+  -webkit-appearance: none;
+  appearance: none;
+}
+#oracle-input::placeholder {
+  font-family: var(--font);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  color: var(--text-mid);
+  opacity: 1;
+}
+#oracle-send {
+  background: transparent;
+  border: none;
+  color: var(--text-mute);
+  font-family: var(--font);
+  font-size: var(--fs-base);
+  padding: var(--sp-2) 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+#oracle-send:hover { color: var(--companion-hue, #CC7D5E); border-color: var(--companion-hue, #CC7D5E); }
+.oracle-user-msg {
+  color: var(--text-mid);
+  font-size: var(--fs-xs);
+  padding: 1px 0;
+  word-break: break-word;
+}
+.oracle-user-msg::before { content: '> '; color: var(--text-mute); }
+.oracle-thinking {
+  color: var(--text-mute);
+  font-size: var(--fs-xs);
+  opacity: 0.5;
+  padding: 1px 0;
+}
+.oracle-intro {
+  opacity: 0.45;
+  font-style: italic;
+  padding-bottom: 4px;
+}
+

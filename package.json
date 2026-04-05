@@ -5,10 +5,14 @@
   "type": "module",
   "scripts": {
     "tauri": "tauri",
-    "dev": "python3 scripts/vexil_master.py & npm run tauri -- dev"
+    "dev": "python3 scripts/vexil_master.py & npm run tauri -- dev",
+    "test": "vitest run"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2"
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/cli": "^2",
+    "jsdom": "^26.1.0",
+    "vitest": "^3.1.1"
   },
   "dependencies": {
     "@tauri-apps/plugin-dialog": "^2.6.0",

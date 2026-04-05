@@ -5,10 +5,11 @@ import { sessions, sessionLogs, getActiveSessionId } from './session.js';
 import { pushMessage, updateWorkingCursor, updateCursorPhase, scheduleScroll } from './messages.js';
 import { updateSessionCard } from './cards.js';
 import { pxLog } from './logger.js';
-import { addToVexilLog, getBuddyTrigger } from './companion.js';
+import { addToVexilLog, getBuddyTrigger, triggerAsciiAction } from './companion.js';
+import { accrueNimForSession } from './nim.js';
 
 // ── Vexil Master feed (proactive cross-session commentary) ──────────────
-const VEXIL_FEED_PATH = '/tmp/vexil_feed.jsonl';
+const VEXIL_FEED_PATH = '~/.local/share/pixel-terminal/vexil_feed.jsonl';
 function appendVexilFeed(entry) {
   const line = JSON.stringify({ ...entry, ts: Date.now() });
   window.__TAURI__?.core?.invoke('append_line_to_file', { path: VEXIL_FEED_PATH, line }).catch(() => {});
@@ -60,6 +61,7 @@ export function handleEvent(id, event) {
         s._workingPhase = 'writing';
         updateCursorPhase('writing');
       } else if (blk?.type === 'tool_use') {
+        triggerAsciiAction();
         pxLog('TOOL', `id:${id.slice(0,8)} ${blk.name}`);
         if (!isInternalTool(blk.name)) {
           // Show tool name immediately — input arrives later via 'assistant'
@@ -284,6 +286,7 @@ export function handleEvent(id, event) {
       const u = event.usage || s._lastMsgUsage;
       if (u) s.tokens += (u.input_tokens || 0) + (u.output_tokens || 0);
       else s.tokens += s._liveTokens; // result.usage absent and no assistant usage either
+      accrueNimForSession(s); // award nim for newly-spent tokens
 
       // Accumulate output tokens for perf (multiple result events per user turn)
       if (u?.output_tokens) s._perfOutTokens = (s._perfOutTokens || 0) + u.output_tokens;
@@ -319,8 +322,7 @@ export function handleEvent(id, event) {
           // Route vexil-addressed replies to VEXIL tab only.
           // Guard: verify _lastUserMsg actually started with 'vexil ' — prevents
           // state leaks where _vexilTurn is true but the triggering message wasn't vexil.
-          const confirmedVexil = s._vexilTurn
-            && (s._lastUserMsg || '').toLowerCase().startsWith(getBuddyTrigger());
+          const confirmedVexil = s._confirmedVexil && s._vexilTurn;
           pxLog('VEXIL', `id:${id.slice(0,8)} turn:${s._vexilTurn} confirmed:${confirmedVexil} lastMsg:"${(s._lastUserMsg||'').slice(0,40)}" textLen:${s._turnText?.length ?? 0}`);
           if (confirmedVexil && s._turnText) {
             addToVexilLog('vexil', s._turnText.replace(/\n/g, ' ').slice(0, 240));
@@ -330,9 +332,9 @@ export function handleEvent(id, event) {
           s._hitRateLimit = false;
           s._perfOutTokens = 0;
         }
-        // Emit turn_complete so daemon can fire per-turn commentary (native buddy cadence)
-        // Include turn_text + user_msg so daemon has intent context, not just tool shape.
-        if (s._turnToolCount > 0) {
+        // Always emit turn_complete — daemon uses tool_count to gate commentary,
+        // but needs all turns (including pure-chat) for oracle conversation context.
+        if (s._turnText || s._turnToolCount > 0) {
           appendVexilFeed({
             type:       'turn_complete',
             session_id: id.slice(0, 8),
@@ -345,6 +347,7 @@ export function handleEvent(id, event) {
         s._turnText = '';
         s._lastUserMsg = '';
         s._vexilTurn = false;
+        s._confirmedVexil = false;
         s._turnToolCount = 0;
         setStatus(id, 'idle');
         if (getActiveSessionId() !== id) {
@@ -395,8 +398,12 @@ export function handleEvent(id, event) {
 
     case 'rate_limit_event':
       s._hitRateLimit = true;
-      pxLog('RATE-LIMIT', `id:${id.slice(0,8)} — CLI retrying automatically`);
-      appendVexilFeed({ type: 'rate_limit', session_id: id.slice(0, 8) });
+      s._rateLimitCount = (s._rateLimitCount || 0) + 1;
+      pxLog('RATE-LIMIT', `id:${id.slice(0,8)} hit #${s._rateLimitCount} — CLI retrying automatically`);
+      pushMessage(id, { type: 'system-msg', text: s._rateLimitCount > 1
+        ? `\u29d6 rate limited \u00d7${s._rateLimitCount} \u00b7 retrying\u2026`
+        : '\u29d6 rate limited \u00b7 retrying\u2026' });
+      appendVexilFeed({ type: 'rate_limit', session_id: id.slice(0, 8), retry: s._rateLimitCount });
       break;
 
     default:

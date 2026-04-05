@@ -1,59 +1,71 @@
 # STATE.md — Working State (re-read after compaction)
-## Updated: 2026-04-03
+## Updated: 2026-04-04
 
-### Active Work
-- pixel-terminal companion system session — large batch of fixes and features shipped
-- Reload pixel-terminal to test: session scheduler, stale badge, file-context commentary, buddy log color, FILES tab hidden fix
+### Active Branch
+`security/pr1-hardening` — PR #1 open, accumulated changes being pushed
 
-### Session Shipped (2026-04-03)
-- **_teardownLivePin()** — consolidated 3 scattered destroy+null pairs in history.js
-- **Session scheduler** — lastActivityAt on sessions, getStaleSessionIds(), creation gate at 5+ sessions, ⊖ stale badge on cards, 60s refresh tick
-- **Buddy log color** — pollMasterOut uses 'vexil' state → .vexil-entry--buddy → companion hue color
-- **Hook gate removed from log** — approval requests bubble-only, no red log entry
-- **FILES tab fix** — #attachments-panel.hidden { display: none } was missing; showTab('vexil') on init
-- **Drop files orphan removed** — static .att-empty div gone from index.html
-- **reportingMode filter** — vexil_master.py suppresses internal refs in user mode; buddy.json has reportingMode:dev
-- **Plan A built** — events.js passes file+cwd in tool_use feed; vexil_master.py reads file excerpts at trigger time; all tuple unpacks use *_ splat
-- **Rate limit prompt grounded** — passes actual tool context, banned speculation about causes
+### What Shipped This Session (2026-04-04 — Session 2)
 
-### Key IDs
-- Collection: pixel_terminal (gemini-memory)
-- buddy.json: ~/.config/pixel-terminal/buddy.json (reportingMode: dev, syncedFrom: claude-code)
-- Handoff doc: ~/Projects/command-center/research/buddy-system-port-handoff.md
+#### Vexil Oracle Voice Rewrite
+| Problem | Root Cause | Fix |
+|---------|------------|-----|
+| Oracle silent (no responses) | `--max-tokens` is invalid claude CLI flag — exit code 1 every call | Removed flag from both subprocess calls |
+| Oracle blind to "is this right?" | `turn_complete` only emitted when `tool_count > 0` — pure chat turns never captured | `events.js`: emit for all turns with `turn_text` |
+| Generic confused voice | `call_claude_oracle()` never loaded companion personality | Now loads `load_claude_companion()` → `~/.claude.json` personality first |
+| Hedging, confused responses | "Only reference what you were told" instruction | Removed; replaced with "Be opinionated and specific. 2 sentences max." |
+| Cut off / scroll race | `scrollTop = scrollHeight` before layout reflow | `requestAnimationFrame` in `voice.js` |
+| Wrong session for context | `max(key=len)` picked most-history session | Now picks most-recent by timestamp |
 
-### Next
-- Reload and verify: stale badge, file-context commentary quality, FILES tab hidden, buddy log color
-- Plan B (buddy port): ASCII sprites, face render, companion intro dedup — defer until A verified
-- Future Plan C: per-turn conversation context in feed (full Vexil-quality ceiling)
+#### Audit — Vexil Oracle + Sprite Spec
+- Full 8-stage audit + Gemini two-pass adversarial → `docs/preaudit/AUDIT_VEXIL_ORACLE_2026-04-04.md`
+- **CRITICAL found**: `ascii-sprites.js` per-frame line-drop vs spec all-frames (intentional — skip per user)
+- **CRITICAL found**: `attachments.js` reads file before size check (OOM risk) — pending PR #3
+- **WARNING corroborated**: `_read_file_context` uses `str.startswith()` not `is_relative_to()`
 
-### Key IDs
-- Collection: pixel_terminal (gemini-memory)
-- Type scale: --fs-lg(13) --fs-base(12) --fs-sm(11) --fs-xs(10)
-- Spacing: --sp-1(2) --sp-2(4) --sp-3(8) --sp-4(16)
-- Line-height: --lh-tight(1.2) --lh-base(1.4)
+#### Accumulated from Previous Session (now committed)
+- App rename: "Pixel Claude" → **Anima**, bundle ID `com.bradleytangonan.anima`
+- Icons rebuilt (squircle PNG, all bundle sizes)
+- Security: 5 CRITICALs closed (path allowlist, XSS, CSP, vexil paths, thread safety)
+- Vitest 15/15 + cargo test 15/15
+- CSS split: `styles.css` → 5 modules
+- Rust split: `lib.rs` → `commands/` modules
 
-### Decisions This Session
-- CSS design tokens fully applied
-- white-space: pre-wrap moved from .msg-bubble to .msg.user .msg-bubble only
-- .system-label margin-top removed, opacity 0.75 + color --text-mute
-- .msg.user margin-top: 16px added (now suspected too large)
+### Pending / Next
 
-### Blockers
-- Message spacing: 16px user turn gap looks wrong per screenshot
+#### PR #3 (next)
+- [ ] `attachments.js`: file size check before `read_file_as_base64` (OOM guard)
+- [ ] `src-tauri/src/commands/file_io.rs:_read_file_context`: `is_relative_to()` fix
+- [ ] `vexil_master.py`: inode check for feed rotation
+- [ ] `scripts/generate-buddy.js`: fix rollStat distribution (2d10 → intended behavior)
+- [ ] CI: `.github/workflows/test.yml`
 
-### Last Session Snapshot
-Date: 2026-04-01
-Open actions (MERGED):
-- [ ] Production PATH fix
-- [ ] Full A/B test: drop image, ask dimensions
-- [ ] Per-animal hue subsets (ANIMAL_HUES map)
-- [ ] Dot click always-restart bridge
-- [ ] Tune message spacing — Gemini Vision + --seq
-- [ ] Pixel companion sprite — intercept /buddy in slash-menu, 16x32 sprite in px-master slot 0, states: idle/thinking/error/done from stream-json events
-- [ ] Vexil Memory Linter — memory_lint.py (PreToolUse hook) + companion.js (3s file poll) — spec at command-center/scripts/memory_lint.py. No new Rust. read_file_as_text already exists.
-Decisions: 9 | Fixes: 4
-Next: → Apply Gemini Vision spacing feedback
+#### Launch Sequence
+- [ ] Demo GIF (30-45s)
+- [ ] README rewrite (`docs/launch/REPO_POSITIONING_PLAN.md`)
+- [ ] GitHub Release `v0.1.0-alpha` with `.dmg`
+- [ ] PR to `hesreallyhim/awesome-claude-code`
+- [ ] Show HN → r/ClaudeCode → r/rust
 
-### Research Log: Kairos + Buddy (2026-04-02)
-- **KAIROS** (Claude Code leak 2026-03-31): internal always-on daemon, feature-flagged, not in public builds. autoDream = idle memory consolidation. px-master covers the architecture — gap is passive autonomous triggering without user prompt.
-- **/buddy** (shipped 2026-04-01, April Fools): ASCII terminal pet, 18 species, Pro only, deterministic by account hash. Build native pixel sprite companion instead — persistent via px-master, multi-session aware, reacts to stream-json. Strictly better than ASCII.
+### Key Files
+- `scripts/vexil_master.py` — oracle persona, `_session_convo`, commentary triggers
+- `src/events.js` — `turn_complete` emitted for all turns (tool + chat)
+- `src/voice.js` — oracle chat display, rAF scroll fix
+- `src/companion.js` — sprite rendering, buddy polling, master output poll
+- `src/ascii-sprites.js` — 18 species × 3 frames, `renderFrame()`
+- `src-tauri/src/commands/file_io.rs` — `expand_and_validate_path()`, path allowlist
+- `docs/preaudit/AUDIT_VEXIL_ORACLE_2026-04-04.md` — latest audit
+- `docs/launch/REPO_POSITIONING_PLAN.md` — launch strategy
+
+### Key Constants
+- Font: Menlo (`/System/Library/Fonts/Menlo.ttc`)
+- Color: `#d87756` orange, `#0d0d0d` bg
+- `REROLL_NIM_COST = 0` in `src/nim.js` — gate open for testing
+- `NIM_PER_TOKENS = 1000` — 1 nim per 1000 tokens
+- `FAMILIAR_SALT = 'pixel-familiar-2026'`
+- Collection: `pixel_terminal` (gemini-memory)
+- buddy.json: `~/.config/pixel-terminal/buddy.json`
+- App name: **Anima** | Bundle ID: `com.bradleytangonan.anima`
+- Oracle model: `claude-sonnet-4-6` (sessions), `claude-haiku-4-5-20251001` (no sessions)
+
+### Launch: `./launch.command`
+Kills old daemon + app, wipes feeds, clears WebKit cache, restarts everything. One command gets all changes.

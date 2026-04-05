@@ -3,14 +3,13 @@
 vexil_master.py — Proactive cross-session Vexil commentary daemon.
 
 Polls /tmp/vexil_feed.jsonl for events from all pixel-terminal sessions.
-Watches tool sequences per session and fires Gemini Flash when patterns
-suggest something worth commenting on. Also watches for rate limits,
-tool errors, and token bloat across sessions.
+Watches tool sequences per session and fires Claude (claude -p subprocess)
+when patterns suggest something worth commenting on. Also watches for
+tool errors and token bloat across sessions.
 
 Triggers:
   retry_loop          — same tool 3+ times in a row in one session
   read_heavy          — 9+ consecutive read ops within 90s with no write
-  rate_limit_flood    — 3+ rate_limit events in any 10-minute window
   cross_session_error — same tool error in 2+ different sessions
   token_bloat         — single turn > 80k tokens
 
@@ -19,19 +18,21 @@ Cooldown: max 1 comment per 60 seconds globally.
 
 import json
 import os
+import re
 import time
 import collections
 import subprocess
+import threading
 from pathlib import Path
 from typing import Optional, Tuple, Dict
 
-FEED_PATH            = '/tmp/vexil_feed.jsonl'
-OUT_PATH             = '/tmp/vexil_master_out.jsonl'
-POLL_INTERVAL        = 3.0
-COOLDOWN             = 60.0   # global cooldown for anomaly triggers (retry, rate_limit, etc.)
+_DATA_DIR            = Path.home() / '.local' / 'share' / 'pixel-terminal'
+FEED_PATH            = str(_DATA_DIR / 'vexil_feed.jsonl')
+OUT_PATH             = str(_DATA_DIR / 'vexil_master_out.jsonl')
+ORACLE_QUERY_PATH    = str(_DATA_DIR / 'oracle_query.json')
+POLL_INTERVAL        = 1.0
+COOLDOWN             = 60.0   # global cooldown for anomaly triggers (retry, etc.)
 TURN_COOLDOWN        = 20.0   # per-session cooldown for turn_complete commentary
-RATE_LIMIT_WINDOW    = 600.0  # 10-minute sliding window
-RATE_LIMIT_THRESHOLD = 2      # lowered: 2 rate limits in window is already notable
 TOKEN_BLOAT_THRESHOLD = 80000
 RETRY_THRESHOLD      = 3   # same tool N times in a row
 READ_HEAVY_THRESHOLD = 5   # lowered: 5 consecutive reads (was 9, unreachable in practice)
@@ -114,6 +115,83 @@ def build_persona() -> str:
     )
 
 
+def call_claude_oracle(message: str, history: list, sessions: list = None, live_ctx: str = None, recent_convo: str = None) -> Optional[str]:
+    """Interactive ORACLE pre-session chat — per-query subprocess, same auth path as old oracle."""
+    companion   = load_claude_companion()
+    buddy       = load_buddy()
+    name        = companion.get('name') or buddy.get('name', 'Vexil')
+    personality = companion.get('personality') or buddy.get('personality', '')
+
+    buddy_species = buddy.get('species', '')
+    buddy_voice   = buddy.get('voice', '')
+    buddy_stats   = buddy.get('stats', {})
+    peak_stat     = max(buddy_stats, key=lambda k: buddy_stats[k]) if buddy_stats else ''
+    peak_val      = buddy_stats.get(peak_stat, 0) if peak_stat else 0
+
+    # Build trait line — shared across both branches
+    trait_line = ''
+    if buddy_species or buddy_voice or peak_stat:
+        trait_line = f"Species: {buddy_species}." if buddy_species else ''
+        if buddy_voice and buddy_voice != 'default':
+            trait_line += f" Voice: {buddy_voice}."
+        if peak_stat:
+            trait_line += f" Peak trait: {peak_stat} {peak_val}/10."
+        trait_line = trait_line.strip()
+
+    if sessions:
+        sessions_str = '; '.join(f"{s.get('name')} ({s.get('cwd')})" for s in sessions)
+        context = f"{personality}\n\n" if personality else ''
+        context += (
+            f"You are {name}, watching Claude Code sessions.\n"
+            f"Open sessions: {sessions_str}.\n"
+        )
+        if trait_line:
+            context += trait_line + "\n"
+        if live_ctx:
+            context += f"Recent tool activity:\n{live_ctx}\n"
+        if recent_convo:
+            context += f"Recent session conversation:\n{recent_convo}\n"
+        context += (
+            "\nAnswer directly from what you know. Be opinionated and specific. "
+            "2 sentences max. Cut to the insight, not the description."
+        )
+    else:
+        context = f"{personality}\n\n" if personality else ''
+        if trait_line:
+            context += trait_line + "\n"
+        context += (
+            f"You are {name}. No sessions open — you're blind right now. "
+            "Tell the user to press + to open a project folder. "
+            "One sentence."
+        )
+    lines = [context, "", "--- Conversation ---"]
+    for turn in history:
+        role = "USER" if turn.get('role') == 'user' else name.upper()
+        lines.append(f"{role}: {turn.get('content', '')}")
+    lines.append(f"USER: {message}")
+    lines.append(f"{name.upper()}:")
+    full_prompt = "\n".join(lines)
+    model   = 'claude-sonnet-4-6' if sessions else 'claude-haiku-4-5-20251001'
+    timeout = 30 if sessions else 12
+    try:
+        result = subprocess.run(
+            ['claude', '-p', '--bare', '--model', model],
+            input=full_prompt,
+            capture_output=True, text=True, timeout=timeout,
+        )
+        if result.returncode != 0:
+            print(f'[vexil-master] oracle -p failed (rc={result.returncode}): {result.stderr[:200]}', flush=True)
+            return None
+        msg = result.stdout.strip()
+        return msg if msg else None
+    except subprocess.TimeoutExpired:
+        print(f'[vexil-master] oracle timed out ({timeout}s)', flush=True)
+        return None
+    except Exception as e:
+        print(f'[vexil-master] oracle error: {e}', flush=True)
+        return None
+
+
 def call_claude(prompt: str) -> Optional[str]:
     # Watcher framing (not roleplay) gives personality without asterisk bleedthrough.
     # Back to Sonnet — Haiku was too weak for Vexil's voice.
@@ -154,6 +232,7 @@ def check_tool_patterns(
     sid: str,
     sequences: dict,
     now: float,
+    session_born: dict = None,
 ) -> Tuple[Optional[str], dict]:
     """
     Inspect per-session tool sequence for patterns worth commenting on.
@@ -180,7 +259,9 @@ def check_tool_patterns(
             }
 
     # Read-heavy: N consecutive reads within time window with no write
-    if len(entries) >= READ_HEAVY_THRESHOLD:
+    # Suppress during session orientation window (first 120s) — /gsd and CLAUDE.md reads are expected
+    session_age = now - session_born.get(sid, now)
+    if len(entries) >= READ_HEAVY_THRESHOLD and session_age > 120:
         tail = entries[-READ_HEAVY_THRESHOLD:]
         tail_ts    = [ts for ts, _, _ in tail]
         tail_tools = [t for _, t, _ in tail]
@@ -265,10 +346,15 @@ def _reporting_mode() -> str:
 
 
 def main() -> None:
+    # Ensure runtime data directory exists (safe from /tmp symlink attacks)
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+
     feed_offset: int = 0
     last_comment_ts: float = 0.0
-    rate_limit_times: collections.deque = collections.deque()
     tool_errors: Dict[str, list] = {}
+
+    # Lock protecting recent_activity — accessed by main loop and oracle worker thread
+    _activity_lock = threading.Lock()
 
     # Per-session tool sequence: {session_id: deque of (timestamp, tool_name)}
     # Max 20 entries per session — enough for pattern detection, bounded memory
@@ -281,17 +367,15 @@ def main() -> None:
     recent_activity: Dict[str, list] = {}
     # Per-session last comment time for turn_complete cadence (20s cooldown)
     last_comment_per_session: Dict[str, float] = {}
+    # Rolling last-4 conversation turns per session for oracle context
+    _session_convo: Dict[str, list] = {}
+    # First time we saw any event for this session — used to suppress orientation-phase triggers
+    session_born: Dict[str, float] = {}
     # turn_complete events seen this batch: {session_id: tool_count}
     turn_complete_this_batch: Dict[str, int] = {}
 
     # Last 3 physical actions Vexil used — injected into prompt to prevent repetition
     recent_actions: collections.deque = collections.deque(maxlen=3)
-
-    # ── Cross-session memory lint state ───────────────────────────────────────
-    # id → [(session_id, ts)] — detect same ID written in 2+ sessions within 60s
-    memory_id_writes: Dict[str, list] = {}
-    # violation_key → {session_ids} — detect same routing violation in 2+ sessions
-    memory_routing_sessions: Dict[str, set] = {}
 
     # Seed offset — skip events from before this daemon started
     try:
@@ -303,16 +387,118 @@ def main() -> None:
     # Write startup signal so companion.js can detect daemon presence on poll
     append_out('\u22b8 online')
 
+    _oracle_query_mtime: float = 0.0
+    _oracle_busy: bool = False
+    _commentary_busy: bool = False
+
+    def _oracle_worker(query: dict) -> None:
+        nonlocal _oracle_busy
+        try:
+            _now = time.time()
+            activity_lines = []
+            convo_lines    = []
+            with _activity_lock:
+                _activity_snapshot = list(recent_activity.items())
+                _convo_snapshot    = {k: list(v) for k, v in _session_convo.items()}
+            for sid, acts in _activity_snapshot:
+                _recent = [(t, tool, hint) for (t, tool, hint, *_) in acts if _now - t < 300]
+                if _recent:
+                    summary = ', '.join(f"{tool}({hint})" if hint else tool for _, tool, hint in _recent[-4:])
+                    activity_lines.append(f"  session {sid[:8]}: {summary}")
+            # Include last 2 turns from the most recently updated session
+            if _convo_snapshot:
+                latest_sid = max(
+                    _convo_snapshot,
+                    key=lambda s: _convo_snapshot[s][-1][0] if _convo_snapshot[s] else 0
+                )
+                for ts_e, user_msg, turn_text in _convo_snapshot[latest_sid][-2:]:
+                    if user_msg:
+                        convo_lines.append(f"USER: {user_msg[:300]}")
+                    if turn_text:
+                        convo_lines.append(f"CLAUDE: {turn_text[:600]}")
+            live_ctx     = '\n'.join(activity_lines) if activity_lines else None
+            recent_convo = '\n'.join(convo_lines)    if convo_lines    else None
+            reply = call_claude_oracle(
+                query.get('message', ''),
+                query.get('history', []),
+                query.get('sessions', []),
+                live_ctx,
+                recent_convo,
+            )
+            if reply:
+                out_entry = json.dumps({
+                    'type': 'oracle_response',
+                    'req_id': query.get('req_id'),
+                    'msg': reply,
+                    'ts': int(time.time() * 1000),
+                })
+                fd = os.open(OUT_PATH, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+                try:
+                    os.write(fd, (out_entry + '\n').encode())
+                finally:
+                    os.close(fd)
+                print(f'[vexil-master] oracle → "{reply[:80]}"', flush=True)
+        except Exception as _oe:
+            print(f'[vexil-master] oracle worker error: {_oe}', flush=True)
+        finally:
+            _oracle_busy = False
+
+    def _commentary_worker(prompt: str, _trigger: str) -> None:
+        nonlocal _commentary_busy
+        try:
+            msg = call_claude(prompt)
+            if msg:
+                if _reporting_mode() != 'dev' and _is_internal(msg):
+                    print(f'[vexil-master] suppressed internal ref (user mode): "{msg[:80]}"')
+                else:
+                    append_out(msg)
+                    m = re.search(r'\*([^*]+)\*', msg)
+                    if m:
+                        recent_actions.append(m.group(1).strip())
+                print(f'[vexil-master] {_trigger} → "{msg[:80]}"', flush=True)
+        except Exception as _ce:
+            print(f'[vexil-master] commentary worker error: {_ce}', flush=True)
+        finally:
+            _commentary_busy = False
+
     while True:
+        # ── Oracle pre-session chat (non-blocking thread dispatch) ────────────
+        if not _oracle_busy:
+            try:
+                qmtime = os.path.getmtime(ORACLE_QUERY_PATH)
+                if qmtime > _oracle_query_mtime:
+                    _oracle_query_mtime = qmtime
+                    with open(ORACLE_QUERY_PATH) as _qf:
+                        query = json.load(_qf)
+                    _oracle_busy = True
+                    threading.Thread(target=_oracle_worker, args=(query,), daemon=True).start()
+            except FileNotFoundError:
+                pass
+            except Exception as _oe:
+                print(f'[vexil-master] oracle check error: {_oe}', flush=True)
+
         time.sleep(POLL_INTERVAL)
 
         # ── Read new feed entries ─────────────────────────────────────────────
         new_entries: list[dict] = []
         try:
+            # Detect file truncation/rotation — reset offset so events aren't missed
+            try:
+                if os.path.getsize(FEED_PATH) < feed_offset:
+                    feed_offset = 0
+            except FileNotFoundError:
+                pass
             with open(FEED_PATH, 'rb') as f:
                 f.seek(feed_offset)
                 chunk = f.read()
-                feed_offset += len(chunk)
+            # Only advance to the last complete line — a trailing partial line (written mid-event)
+            # would advance the offset past it, permanently losing the event.
+            last_nl = chunk.rfind(b'\n')
+            if last_nl >= 0:
+                feed_offset += last_nl + 1
+                chunk = chunk[:last_nl + 1]
+            else:
+                chunk = b''  # no complete lines yet — skip this poll cycle
             for raw_line in chunk.decode(errors='replace').splitlines():
                 raw_line = raw_line.strip()
                 if not raw_line:
@@ -350,19 +536,22 @@ def main() -> None:
                 hint = entry.get('hint', '')  # human-readable context from toolHint()
                 if not tool:
                     continue
+                if sid not in session_born:
+                    session_born[sid] = ets
                 if sid not in tool_sequences:
                     tool_sequences[sid] = collections.deque(maxlen=20)
                 tool_sequences[sid].append((ets, tool, hint))
                 sessions_with_new_tools.add(sid)
                 # Keep a short rolling summary per session for tick context
                 # (counter is driven by tool_any — not here, avoids double-count)
-                if sid not in recent_activity:
-                    recent_activity[sid] = []
                 file_path = entry.get('file')   # full absolute path, or None
                 cwd       = entry.get('cwd')    # session project root, or None
-                recent_activity[sid].append((ets, short_name(tool), hint, file_path, cwd))
-                if len(recent_activity[sid]) > 6:
-                    recent_activity[sid] = recent_activity[sid][-6:]
+                with _activity_lock:
+                    if sid not in recent_activity:
+                        recent_activity[sid] = []
+                    recent_activity[sid].append((ets, short_name(tool), hint, file_path, cwd))
+                    if len(recent_activity[sid]) > 6:
+                        recent_activity[sid] = recent_activity[sid][-6:]
 
                 # Write tools reset the read-heavy TTL so it can re-trigger
                 if classify_tool(tool) == 'write':
@@ -376,14 +565,21 @@ def main() -> None:
                         'turn_text': entry.get('turn_text', ''),
                         'user_msg':  entry.get('user_msg', ''),
                     }
+                # Always capture conversation turns so oracle has context for "is this right?" queries
+                _user_msg  = entry.get('user_msg', '')
+                _turn_text = entry.get('turn_text', '')
+                if _user_msg or _turn_text:
+                    with _activity_lock:
+                        if sid not in _session_convo:
+                            _session_convo[sid] = []
+                        _session_convo[sid].append((ets, _user_msg, _turn_text))
+                        if len(_session_convo[sid]) > 4:
+                            _session_convo[sid] = _session_convo[sid][-4:]
 
             elif etype == 'tool_any':
                 # Lightweight counter-only event — all tools including MCP/internal.
                 # Don't add to sequences or recent_activity (no hint/context).
                 tools_since_comment += 1
-
-            elif etype == 'rate_limit':
-                rate_limit_times.append(ets)
 
             elif etype == 'tool_error':
                 tool  = entry.get('tool', '?')
@@ -401,24 +597,6 @@ def main() -> None:
                         trigger = 'token_bloat'
                         trigger_data = {'tokens': tokens, 'session_id': sid}
 
-            elif etype == 'memory_lint':
-                # Cross-session lint events from memory_lint.py hook
-                mid       = entry.get('mem_id', '')
-                violation = entry.get('violation', 'clean')
-                if mid:
-                    if mid not in memory_id_writes:
-                        memory_id_writes[mid] = []
-                    memory_id_writes[mid].append((sid, ets))
-                if 'block_urn_routing' in violation:
-                    memory_routing_sessions.setdefault('block_urn_routing', set()).add(sid)
-
-        # ── Prune stale memory lint state ────────────────────────────────────
-        # Keep only recent entries so memory doesn't grow unbounded
-        for mid in list(memory_id_writes.keys()):
-            memory_id_writes[mid] = [(s, t) for s, t in memory_id_writes[mid]
-                                     if (now - t) < 120.0]
-            if not memory_id_writes[mid]:
-                del memory_id_writes[mid]
 
         # ── Per-turn commentary (native buddy cadence) ───────────────────────
         # Fires once per completed turn if the session did real work (tool_count > 0).
@@ -427,7 +605,8 @@ def main() -> None:
             for tc_sid, tc_data in turn_complete_this_batch.items():
                 since_last = now - last_comment_per_session.get(tc_sid, 0)
                 if since_last >= TURN_COOLDOWN:
-                    acts = recent_activity.get(tc_sid, [])
+                    with _activity_lock:
+                        acts = list(recent_activity.get(tc_sid, []))
                     recent = [(t, h) for ts_e, t, h, *_ in acts if (now - ts_e) <= 60.0]
                     if recent:
                         trigger = 'turn_complete'
@@ -444,7 +623,7 @@ def main() -> None:
         # ── Check tool patterns once per batch (not per entry) ───────────────
         if trigger is None and (now - last_comment_ts) > COOLDOWN:
             for sid in sessions_with_new_tools:
-                pat, data = check_tool_patterns(sid, tool_sequences, now)
+                pat, data = check_tool_patterns(sid, tool_sequences, now, session_born)
                 if pat:
                     pat_key = f'{sid}:{pat}'
                     if pat_key not in fired_patterns:
@@ -453,18 +632,15 @@ def main() -> None:
                         fired_patterns[pat_key] = now
                         break
 
-        # Prune stale rate limit timestamps
-        cutoff = now - RATE_LIMIT_WINDOW
-        while rate_limit_times and rate_limit_times[0] < cutoff:
-            rate_limit_times.popleft()
-
         # Activity tick — fires when enough tool events have accumulated since last comment
         if trigger is None and tools_since_comment >= ACTIVITY_TRIGGER_THRESHOLD:
             if (now - last_comment_ts) > COOLDOWN:
                 # Only use activity entries from the last ACTIVITY_RECENCY_WINDOW seconds
                 # so the tick reflects what's happening NOW, not an hour ago
                 summary_parts = []
-                for sess_id, acts in recent_activity.items():
+                with _activity_lock:
+                    _tick_snapshot = list(recent_activity.items())
+                for sess_id, acts in _tick_snapshot:
                     recent = [(t, h) for ts_e, t, h, *_ in acts if (now - ts_e) <= ACTIVITY_RECENCY_WINDOW]
                     if recent:
                         pairs = [f"{t}({h})" if h else t for t, h in recent[-3:]]
@@ -476,12 +652,6 @@ def main() -> None:
                     trigger = 'session_activity'
                     trigger_data = {'summary': '; '.join(summary_parts)}
 
-        # Rate limit flood
-        if trigger is None and len(rate_limit_times) >= RATE_LIMIT_THRESHOLD:
-            if (now - last_comment_ts) > COOLDOWN:
-                trigger = 'rate_limit_flood'
-                trigger_data = {'count': len(rate_limit_times)}
-
         # Cross-session error
         if trigger is None:
             for key, sessions in tool_errors.items():
@@ -491,33 +661,10 @@ def main() -> None:
                         trigger_data = {'key': key, 'sessions': list(set(sessions))[:3]}
                         break
 
-        # Memory ID collision — same ID written in 2+ sessions within 60s
-        if trigger is None:
-            for mid, entries in list(memory_id_writes.items()):
-                recent = [(s, t) for s, t in entries if (now - t) < 60.0]
-                sessions = {s for s, _ in recent}
-                if len(sessions) >= 2 and (now - last_comment_ts) > COOLDOWN:
-                    trigger = 'memory_id_collision'
-                    trigger_data = {'id': mid, 'sessions': list(sessions)[:3]}
-                    memory_id_writes.pop(mid, None)
-                    break
-
-        # Memory routing collision — same UNR routing violation in 2+ sessions
-        if trigger is None:
-            for vkey, sessions in list(memory_routing_sessions.items()):
-                if len(sessions) >= 2 and (now - last_comment_ts) > COOLDOWN:
-                    pat_key = f'routing:{vkey}'
-                    if pat_key not in fired_patterns:
-                        trigger = 'memory_routing_collision'
-                        trigger_data = {'sessions': list(sessions)[:3]}
-                        fired_patterns[pat_key] = now
-                        memory_routing_sessions.pop(vkey, None)
-                        break
-
         if trigger is None:
             continue
 
-        # ── Build Gemini prompt ───────────────────────────────────────────────
+        # ── Build Claude prompt ───────────────────────────────────────────────
         if trigger == 'turn_complete':
             sid       = trigger_data['session_id']
             tc        = trigger_data['tool_count']
@@ -570,21 +717,6 @@ def main() -> None:
                 f"Lost or avoiding the actual change?"
             )
 
-        elif trigger == 'rate_limit_flood':
-            count = trigger_data['count']
-            window_min = int(RATE_LIMIT_WINDOW / 60)
-            activity_parts = []
-            for sess_id, acts in recent_activity.items():
-                recent = [(t, h) for ts_e, t, h, *_ in acts if (now - ts_e) <= ACTIVITY_RECENCY_WINDOW]
-                if recent:
-                    pairs = [f"{t}({h})" if h else t for t, h in recent[-3:]]
-                    activity_parts.append(f"[{sess_id}] {' → '.join(pairs)}")
-            activity_ctx = ('; '.join(activity_parts)) if activity_parts else 'no context'
-            prompt = (
-                f"{count} rate limits in {window_min} minutes. Activity: {activity_ctx}. "
-                f"What's the load problem — stick to what the tools show."
-            )
-
         elif trigger == 'cross_session_error':
             key = trigger_data['key']
             sessions = trigger_data['sessions']
@@ -609,22 +741,6 @@ def main() -> None:
                 f"being used."
             )
 
-        elif trigger == 'memory_id_collision':
-            mid      = trigger_data['id']
-            sessions = trigger_data['sessions']
-            prompt = (
-                f"Memory ID '{mid}' written in {len(sessions)} concurrent sessions "
-                f"({', '.join(sessions[:2])}). "
-                f"Which one owns it — or is one a stale retry?"
-            )
-
-        elif trigger == 'memory_routing_collision':
-            sessions = trigger_data['sessions']
-            prompt = (
-                f"UNR routing violation blocked in {len(sessions)} concurrent sessions. "
-                f"Systemic — check CLAUDE.md routing rule or template."
-            )
-
         else:
             continue
 
@@ -633,39 +749,33 @@ def main() -> None:
             avoid = ', '.join(f'"{a}"' for a in recent_actions)
             prompt = prompt + f'\n\nDo not use these physical actions (already used recently): {avoid}.'
 
-        # ── Prepend file context ──────────────────────────────────────────────
-        # turn_complete fires every 20s — cap at 20 lines to avoid token bloat + latency.
-        # Structural triggers (retry_loop, read_heavy) keep full 100-line excerpts.
+        # ── Prepend file context (structural triggers only) ───────────────────
+        # turn_complete already has turn_text + user_msg — file excerpts cause the
+        # model to echo prose from large docs (STATE.md etc.) instead of observing.
+        # Only inject for structural triggers (retry_loop, read_heavy) where file
+        # content directly informs the diagnosis.
         try:
-            ctx_max = 20 if trigger == 'turn_complete' else 100
-            file_ctx = _collect_file_excerpts(recent_activity, now, ACTIVITY_RECENCY_WINDOW,
-                                              max_lines_per_file=ctx_max)
-            if file_ctx:
-                prompt = prompt + '\n\nRelevant file context:\n' + file_ctx
+            if trigger != 'turn_complete':
+                file_ctx = _collect_file_excerpts(recent_activity, now, ACTIVITY_RECENCY_WINDOW,
+                                                  max_lines_per_file=100)
+                if file_ctx:
+                    prompt = prompt + '\n\nRelevant file context:\n' + file_ctx
         except Exception as e:
             print(f'[vexil-master] file context error (skipping): {e}', flush=True)
 
-        # ── Generate and emit ─────────────────────────────────────────────────
-        try:
-            msg = call_claude(prompt)
-        except Exception as e:
-            print(f'[vexil-master] call error (continuing): {e}', flush=True)
-            msg = None
-        if msg:
-            if _reporting_mode() != 'dev' and _is_internal(msg):
-                print(f'[vexil-master] suppressed internal ref (user mode): "{msg[:80]}"')
-            else:
-                append_out(msg)
-                # Parse and store the physical action for next-call dedup
-                import re as _re
-                m = _re.search(r'\*([^*]+)\*', msg)
-                if m:
-                    recent_actions.append(m.group(1).strip())
-            last_comment_ts = now
-            tools_since_comment = 0
-            print(f'[vexil-master] {trigger} → "{msg[:80]}"', flush=True)
-            if trigger == 'cross_session_error':
-                tool_errors.clear()
+        # ── Dispatch commentary async — prevents 30s main loop stall ────────────
+        # Set timestamps immediately to prevent re-triggering during async call.
+        last_comment_ts = now
+        tools_since_comment = 0
+        if trigger == 'cross_session_error':
+            tool_errors.clear()
+        if not _commentary_busy:
+            _commentary_busy = True
+            threading.Thread(
+                target=_commentary_worker, args=(prompt, trigger), daemon=True
+            ).start()
+        else:
+            print(f'[vexil-master] commentary busy — skipping {trigger}', flush=True)
 
 
 if __name__ == '__main__':

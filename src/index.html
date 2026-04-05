@@ -5,13 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pixel Terminal</title>
   <link rel="icon" type="image/svg+xml" href="logo-16.svg" />
-  <link rel="stylesheet" href="styles.css" />
-  <!-- marked loaded as UMD global -->
+  <link rel="stylesheet" href="styles/base.css" />
+  <link rel="stylesheet" href="styles/cards.css" />
+  <link rel="stylesheet" href="styles/companion.css" />
+  <link rel="stylesheet" href="styles/history.css" />
+  <link rel="stylesheet" href="styles/voice.css" />
+  <!-- marked + DOMPurify loaded as UMD globals -->
   <script src="marked.umd.js"></script>
+  <script src="purify.min.js"></script>
 </head>
 <body>
   <div id="drag-region" data-tauri-drag-region>
-    <img src="pixel-claude-logo.png" id="app-title-img" alt="PIXEL CLAUDE" />
   </div>
   <div id="about-overlay" class="hidden">
     <div id="about-box">
@@ -63,20 +67,28 @@
         </div>
       </div>
       <div id="sidebar-h-resize"></div>
-      <div id="voice-log-header">
-        <div id="voice-log-tabs">
-          <button class="voice-tab active" data-vtab="vexil">BUDDY</button>
-          <button class="voice-tab" data-vtab="voice">VOICE</button>
-          <button class="voice-tab" data-vtab="files">FILES</button>
+      <div id="vexil-panel">
+        <div id="voice-log-header">
+          <div id="voice-log-tabs">
+            <button class="voice-tab active" id="vexil-tab-btn" data-vtab="vexil">ORACLE</button>
+            <button class="voice-tab" data-vtab="voice">VOICE</button>
+            <button class="voice-tab" data-vtab="files">FILES</button>
+          </div>
+          <button id="btn-clear-voice-log" title="Clear log">CLR</button>
         </div>
-        <button id="btn-clear-voice-log" title="Clear log">CLR</button>
-      </div>
-      <div id="voice-log" class="hidden"></div>
-      <div id="vexil-log"></div>
-      <div id="attachments-panel" class="hidden"></div>
-      <div id="vexil-bio" class="vexil-bio hidden">
-        <div class="vexil-bio-name"></div>
-        <div class="vexil-bio-personality"></div>
+        <div id="vexil-bio" class="vexil-bio">
+          <div id="vexil-ascii"></div>
+          <div class="vexil-bio-name">&middot; &middot; &middot;</div>
+        </div>
+        <div id="voice-log" class="hidden"></div>
+        <div id="oracle-chat-log"></div>
+        <div id="vexil-log"></div>
+        <div id="oracle-pre-chat" class="hidden">
+          <input id="oracle-input" type="text" placeholder="Ask the oracle..."
+                 autocorrect="off" autocomplete="off" spellcheck="false" />
+          <button id="oracle-send">↵</button>
+        </div>
+        <div id="attachments-panel" class="hidden"></div>
       </div>
     </div>
 
@@ -98,7 +110,15 @@
         </div>
 
         <div id="message-log">
-          <div id="empty-state">no active sessions<br>press + to open a folder</div>
+          <pre id="app-title-pre">              _
+             (_)
+   __ _ _ __  _ _ __ ___   __ _
+  / _` | '_ \| | '_ ` _ \ / _` |
+ | (_| | | | | | | | | | | (_| |
+  \__,_|_| |_|_|_| |_| |_|\__,_|</pre>
+          <div id="empty-state">
+            <div id="empty-state-text">no active sessions<br>press + to open a folder</div>
+          </div>
         </div>
 
         <div id="drop-indicator" class="hidden">drop files to attach</div>
@@ -136,8 +156,8 @@
 
   <div id="session-prompt" class="hidden">
     <div id="session-prompt-title">START HERE</div>
-    <div id="session-prompt-whale-track">
-      <div id="session-prompt-whale"></div>
+    <div id="session-prompt-walker-track">
+      <pre id="session-prompt-walker" class="familiar-pre"></pre>
     </div>
     <div id="session-prompt-msg">Click <span class="prompt-plus">＋</span> to open a folder to start a Claude session</div>
     <button id="session-prompt-got-it">GOT IT</button>

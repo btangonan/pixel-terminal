@@ -1,7 +1,12 @@
 // ── DOM utilities + cache ─────────────────────────────────
 
-const { parse: mdParse } = window.marked;
-window.marked.setOptions({ breaks: true, gfm: true });
+// Sanitize marked output before DOM injection — prevents XSS from LLM-injected HTML.
+// Options and parse call are deferred to function body so this module is importable
+// in non-browser environments (Vitest/jsdom) without window.marked at load time.
+function mdParse(text) {
+  window.marked.setOptions({ breaks: true, gfm: true });
+  return window.DOMPurify.sanitize(window.marked.parse(text));
+}
 
 // DOM cache — populated by initDOM()
 export const $ = {};
@@ -19,7 +24,8 @@ export function initDOM() {
   $.settingsPanel = document.getElementById('settings-panel');
   $.settingsBtn = document.getElementById('settings-btn');
   $.voiceLog = document.getElementById('voice-log');
-  $.vexilLog = document.getElementById('vexil-log');
+  $.vexilLog   = document.getElementById('vexil-log');
+  $.vexilAscii = document.getElementById('vexil-ascii');
   $.voiceLogHeader = document.getElementById('voice-log-header');
   $.aboutOverlay = document.getElementById('about-overlay');
   $.aboutClose = document.getElementById('about-close');
@@ -36,7 +42,7 @@ export function initDOM() {
   $.voiceSourceMic = document.getElementById('voice-source-mic');
   $.sessionPrompt = document.getElementById('session-prompt');
   $.sessionPromptGotIt = document.getElementById('session-prompt-got-it');
-  $.sessionPromptWhale = document.getElementById('session-prompt-whale');
+  $.sessionPromptWalker = document.getElementById('session-prompt-walker');
   $.sidebarHeader = document.getElementById('sidebar-header');
   $.inputBar = document.getElementById('input-bar');
   // Session search
@@ -50,6 +56,10 @@ export function initDOM() {
   $.historyList = document.getElementById('history-list');
   $.historyCurrent = document.getElementById('history-current');
   $.historySearch = document.getElementById('history-search');
+  // Oracle pre-session chat
+  $.oraclePreChat = document.getElementById('oracle-pre-chat');
+  $.oracleInput   = document.getElementById('oracle-input');
+  $.oracleSend    = document.getElementById('oracle-send');
   // History find bar
   $.historyFind = document.getElementById('history-find');
   $.historyFindInput = document.getElementById('history-find-input');

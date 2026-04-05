@@ -22,7 +22,7 @@
   --text-mid:     #adadad;
   --active-green: #39ff14;
   --logo-green:   #7bb54f;
-  --logo-orange:  #d97857;
+  --logo-orange:  #d87756;
 
   /* ── Type scale (4 tiers only) ── */
   --fs-lg:   13px;   /* card names, input field — primary interactive */
@@ -67,9 +67,6 @@ body {
   app-region: drag;
   z-index: 100;
   border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 #app {
@@ -132,13 +129,6 @@ body {
   border-bottom: 1px solid var(--border);
 }
 #sidebar-header .pixel-label { color: var(--accent); }
-#app-title-img {
-  height: 15px;
-  width: auto;
-  image-rendering: pixelated;
-  pointer-events: none;
-  user-select: none;
-}
 #btn-new-session {
   background: transparent;
   border: none;
@@ -234,7 +224,7 @@ body {
 .session-card-top {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 2px;
 }
 
 .session-card-info {
@@ -299,6 +289,7 @@ body {
   transition: opacity 0.1s;
 }
 .session-card:hover .session-card-kill { opacity: 1; }
+.session-card:has(.sprite-wrap:hover) .session-card-kill { opacity: 0; pointer-events: none; }
 .session-card-kill:hover { color: var(--accent); }
 
 /* ── Main Pane ─────────────────────────────── */
@@ -330,27 +321,100 @@ body {
   gap: 3px;
   position: relative;
 }
-#empty-state {
+/* Logo — always in DOM, always at the same position, opacity toggles per state */
+#app-title-pre {
   position: absolute;
-  top: 50%;
-  left: 50%;
+  top: calc(50% - 40px);
+  left: calc(50% - 7px);
   transform: translate(-50%, -50%);
-  color: var(--text-mid);
-  font-size: var(--fs-lg);
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--logo-orange);
+  white-space: pre;
+  opacity: 0.20;
   pointer-events: none;
   user-select: none;
-  text-align: center;
-  opacity: 0.65;
+}
+body.no-session-active #app-title-pre { opacity: 0.7; }
+
+/* Empty state text — sits below the logo */
+#empty-state {
+  position: absolute;
+  top: calc(50% + 25px);
+  left: 50%;
+  transform: translateX(-50%);
   display: none;
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
 }
 body.no-session-active #empty-state { display: block; }
+#empty-state-text {
+  color: var(--text-mid);
+  font-size: var(--fs-lg);
+  text-align: center;
+  opacity: 0.65;
+}
 #message-log::-webkit-scrollbar { width: 3px; }
 #message-log::-webkit-scrollbar-track { background: transparent; }
 #message-log::-webkit-scrollbar-thumb { background: var(--border-hi); }
-/* Buddy bio — persistent footer, always at panel bottom */
-.vexil-bio { padding: 6px 6px 4px; border-top: 1px solid var(--border); margin-top: 4px; }
-.vexil-bio-name { font-family: var(--font-mono); font-size: 9px; color: var(--text); opacity: 0.9; text-transform: uppercase; letter-spacing: 0.04em; }
-.vexil-bio-personality { font-family: var(--font-mono); font-size: 9px; color: var(--text-mid); opacity: 0.7; margin-top: 2px; font-style: italic; line-height: 1.35; }
+/* ── Vexil panel — outer container with hue border ── */
+#vexil-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 40%;
+  min-height: 0;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+/* ── ASCII buddy sprite (inside vexil-bio header row) ── */
+#vexil-ascii {
+  display: flex;
+  align-items: flex-end;
+  flex-shrink: 0;
+  height: 60px; /* 5 lines × 12px — fixed so bio row never shifts height between frames */
+  overflow: hidden;
+}
+
+.vexil-ascii-art {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--companion-hue, #CC7D5E);
+  margin: 0;
+  padding: 0;
+  white-space: pre;
+  user-select: none;
+  text-shadow: 0 0 6px color-mix(in srgb, var(--companion-hue, #CC7D5E) 50%, transparent);
+  opacity: 0.92;
+  transition: opacity 0.1s;
+}
+
+/* Buddy bio — header row: art left, name right */
+.vexil-bio {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--companion-hue, #CC7D5E) 35%, transparent);
+  flex-shrink: 0;
+}
+.vexil-bio.hidden { display: none; }
+.vexil-bio-name {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--companion-hue, #CC7D5E);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  text-align: right;
+}
+.vexil-bio-personality { display: none; }
 
 /* Reserve bottom clearance when companion bubble is visible so it doesn't overlap log text */
 #message-log.companion-active { padding-bottom: 180px; }
@@ -639,13 +703,32 @@ canvas.sprite-canvas {
 }
 
 .sprite-wrap {
-  width: 48px;
-  height: 48px;
+  width: 60px;
+  height: 60px;
   flex-shrink: 0;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-left: 4px;
+  position: relative;
+}
+
+.sprite-wrap pre.familiar-pre {
+  font-size: 6px;
+  line-height: 1.1;
+  font-weight: 700;
+  margin: 0;
+  padding: 0;
+  white-space: pre;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  user-select: none;
+  text-align: center;
+}
+
+.sprite-wrap pre.familiar-pre[data-species="cactus"] {
+  font-size: 5px;
 }
 
 /* ── Confirm modal ───────────────────────── */
@@ -796,9 +879,11 @@ canvas.sprite-canvas {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px 3px;
-  border-top: 1px solid var(--border);
+  padding: 6px 8px 5px;
   border-bottom: 1px solid var(--border);
+}
+#voice-log-header.oracle-active {
+  border-bottom-color: color-mix(in srgb, var(--companion-hue, #CC7D5E) 35%, transparent);
   flex-shrink: 0;
 }
 #voice-log-tabs {
@@ -806,28 +891,37 @@ canvas.sprite-canvas {
   gap: 2px;
 }
 .voice-tab {
-  font-family: var(--font-mono);
+  font-family: var(--font);
   font-size: var(--fs-xs);
   font-weight: 600;
-  color: var(--text-mute);
+  color: var(--text-mid);
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
+  border-radius: 2px;
   cursor: pointer;
-  padding: 2px 5px;
-  opacity: 0.5;
-  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  letter-spacing: 0.05em;
+  opacity: 0.65;
+  transition: color 0.15s, border-color 0.15s, opacity 0.15s;
 }
-.voice-tab:hover { opacity: 0.8; }
+.voice-tab:hover { opacity: 1; color: var(--accent); }
 .voice-tab.active {
+  color: var(--accent);
+  border-color: var(--border-hi);
   opacity: 1;
-  color: var(--text);
-  border-bottom: 1px solid var(--text);
+}
+#vexil-tab-btn {
+  color: var(--text-mid);
+}
+#vexil-tab-btn.active {
+  color: var(--accent);
+  border-color: var(--border-hi);
 }
 #btn-clear-voice-log {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-weight: 600;
-  color: var(--text-mute);
+  color: var(--accent);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -860,6 +954,15 @@ canvas.sprite-canvas {
 .voice-entry.dispatched .ts { opacity: 0.9; }
 
 /* ── Vexil chat log panel ─── */
+#oracle-chat-log {
+  overflow-y: auto;
+  padding: 5px 8px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+  max-height: 40%;
+  flex-shrink: 0;
+}
 #vexil-log {
   flex: 1 1 40%;
   min-height: 0;
@@ -885,7 +988,67 @@ canvas.sprite-canvas {
 }
 .vexil-entry--blocked { color: #ff6b6b; }
 .vexil-entry--warn    { color: #ffa94d; }
-.vexil-entry--buddy   { color: var(--companion-hue); }
+.vexil-entry--buddy   { color: var(--companion-hue, #FFDD44); }
+
+/* ── Oracle pre-session chat ─── */
+#oracle-pre-chat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: var(--sp-3);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#oracle-pre-chat.hidden { display: none; }
+#oracle-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--fs-base);
+  padding: var(--sp-2);
+  outline: none;
+  line-height: var(--lh-base);
+  -webkit-appearance: none;
+  appearance: none;
+}
+#oracle-input::placeholder {
+  font-family: var(--font);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  color: var(--text-mid);
+  opacity: 1;
+}
+#oracle-send {
+  background: transparent;
+  border: none;
+  color: var(--text-mute);
+  font-family: var(--font);
+  font-size: var(--fs-base);
+  padding: var(--sp-2) 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+#oracle-send:hover { color: var(--companion-hue, #CC7D5E); border-color: var(--companion-hue, #CC7D5E); }
+.oracle-user-msg {
+  color: var(--text-mid);
+  font-size: var(--fs-xs);
+  padding: 1px 0;
+  word-break: break-word;
+}
+.oracle-user-msg::before { content: '> '; color: var(--text-mute); }
+.oracle-thinking {
+  color: var(--text-mute);
+  font-size: var(--fs-xs);
+  opacity: 0.5;
+  padding: 1px 0;
+}
+.oracle-intro {
+  opacity: 0.45;
+  font-style: italic;
+  padding-bottom: 4px;
+}
 
 /* ── Settings panel hidden state ─── */
 #settings-panel.hidden { display: none; }
@@ -1082,21 +1245,27 @@ canvas.sprite-canvas {
   text-align: center;
 }
 #session-prompt.hidden { display: none; }
-#session-prompt-whale-track {
+#session-prompt-walker-track {
   position: relative;
   width: 100%;
-  height: 30px;
+  height: 56px;
   overflow: hidden;
-  margin-bottom: 14px;
+  margin-bottom: 3px;
 }
-#session-prompt-whale {
+#session-prompt-walker {
   position: absolute;
-  width: 54px;
-  height: 30px;
-  background-size: 108px 30px;
-  image-rendering: pixelated;
-  top: 0;
+  top: 4px;
   left: 0;
+  font-size: 9px;
+  line-height: 1.1;
+  font-weight: 700;
+  margin: 0;
+  padding: 0;
+  white-space: pre;
+  font-family: var(--font-mono);
+  color: #000;
+  user-select: none;
+  display: inline-block;
 }
 #session-prompt-title {
   font-size: 16px;
@@ -1402,7 +1571,7 @@ body.no-session-active #btn-new-session.plus-inverted {
    ══════════════════════════════════════════ */
 
 :root {
-  --companion-hue: #FF4422;  /* overwritten at runtime from buddy.json */
+  --companion-hue: #CC7D5E;  /* overwritten at runtime from buddy.json */
 }
 
 .companion-wrap {
@@ -1496,4 +1665,303 @@ body.no-session-active #btn-new-session.plus-inverted {
 
 @media (prefers-reduced-motion: reduce) {
   .companion-wrap { transition: none; }
+}
+
+/* ══════════════════════════════════════════════════════════
+   FAMILIAR PROFILE CARD
+   ══════════════════════════════════════════════════════════ */
+
+/* "about me" overlay — appears over the familiar sprite on card hover */
+.familiar-view-btn {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  border: none;
+  color: var(--accent);
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.5px;
+  line-height: 1.4;
+  text-align: center;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.sprite-wrap:hover .familiar-view-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+
+/* Overlay backdrop */
+.fc-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* Card container */
+.fc-card {
+  background: var(--bg2);
+  border: 1px solid var(--border-hi);
+  width: 360px;
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  overflow: hidden;
+}
+
+/* Header */
+.fc-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 6px 10px 5px;
+  border-bottom: 1px solid var(--border);
+}
+
+.fc-species {
+  font-size: var(--fs-lg);
+  color: var(--logo-orange);
+  letter-spacing: 1px;
+  font-weight: normal;
+}
+
+.fc-rarity {
+  font-size: var(--fs-xs);
+  color: var(--fc-rarity-color, #555);
+  letter-spacing: 0.5px;
+}
+
+.fc-type {
+  width: 100%;
+  font-size: var(--fs-xs);
+  color: var(--text-mid);
+  letter-spacing: 0.5px;
+  padding-top: 2px;
+}
+
+/* Body: 2-column */
+.fc-body {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Left column */
+.fc-left {
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 8px 6px;
+  gap: 6px;
+}
+
+.fc-sprite {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--accent);
+  white-space: pre;
+  margin: 0;
+}
+
+.fc-left-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
+/* Right column */
+.fc-right {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px 6px;
+  gap: 6px;
+}
+
+.fc-stats-label {
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  margin-bottom: 2px;
+}
+
+.fc-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fc-stat-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fc-stat-name {
+  font-size: var(--fs-xs);
+  color: var(--text-mid);
+  width: 80px;
+  flex-shrink: 0;
+  letter-spacing: 0.3px;
+}
+
+.fc-stat-bar {
+  flex: 1;
+  height: 5px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.fc-stat-fill {
+  height: 100%;
+  background: var(--fc-rarity-color, #555);
+  transition: width 0.3s ease;
+}
+
+.fc-stat-val {
+  font-size: var(--fs-xs);
+  color: var(--text-mid);
+  width: 24px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.fc-right-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+  letter-spacing: 0.3px;
+  margin-top: auto;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+/* Footer */
+.fc-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px;
+}
+
+.fc-shiny {
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+  letter-spacing: 0.5px;
+}
+
+.fc-shiny--active {
+  color: #ffd700;
+  text-shadow: 0 0 6px rgba(255, 215, 0, 0.5);
+}
+
+/* Re-roll slot + button */
+.fc-reroll-slot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fc-reroll-btn {
+  background: none;
+  border: 1px solid var(--border-hi);
+  color: var(--text-mid);
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+.fc-reroll-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.fc-reroll-btn--locked,
+.fc-reroll-btn:disabled {
+  color: #333;
+  border-color: #252525;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Re-roll confirm dialog */
+.fc-confirm {
+  background: var(--bg-panel, #111);
+  border: 1px solid var(--border-hi);
+  padding: 22px 24px 18px;
+  min-width: 280px;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.fc-confirm-title {
+  font-size: var(--fs-base);
+  color: var(--accent);
+  letter-spacing: 1.5px;
+}
+.fc-confirm-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fc-confirm-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-xs);
+}
+.fc-confirm-label {
+  color: var(--text-mid);
+  letter-spacing: 0.5px;
+}
+.fc-confirm-val {
+  color: var(--accent);
+  letter-spacing: 0.5px;
+}
+.fc-confirm-warning {
+  font-size: var(--fs-xs);
+  color: #c0392b;
+  letter-spacing: 0.3px;
+  border-left: 2px solid #c0392b;
+  padding-left: 8px;
+}
+.fc-confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.fc-confirm-btn {
+  background: none;
+  border: 1px solid var(--border-hi);
+  color: var(--text-mid);
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+.fc-confirm-btn--go {
+  color: #c0392b;
+  border-color: #c0392b;
+}
+.fc-confirm-btn--go:hover {
+  background: #c0392b;
+  color: #fff;
+}
+.fc-confirm-btn--cancel:hover {
+  color: var(--accent);
+  border-color: var(--accent);
 }

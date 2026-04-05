@@ -47,8 +47,8 @@ const SPECIES = [
   'rabbit','mushroom','chonk',
 ];
 
-const EYES = ['default','wide','sleepy','angry','happy','suspicious'];
-const HATS = ['none','tophat','crown','beanie','party','wizard','cowboy','halo'];
+const EYES = ['dot','star','x','circle','at','degree'];  // matches EYE_CHARS in ascii-sprites.js
+const HATS = ['none','crown','tophat','propeller','halo','wizard','beanie','tinyduck'];  // matches HATS in ascii-sprites.js
 const STATS = ['debugging','patience','chaos','wisdom','snark'];
 
 const SPECIES_HUE: Record<string, string> = {

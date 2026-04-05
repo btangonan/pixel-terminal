@@ -3,7 +3,8 @@
 // Read-only. Reuses createMsgEl() from messages.js for rendering.
 
 import { $, esc } from './dom.js';
-import { SpriteRenderer, formatTokens } from './session.js';
+import { formatTokens } from './session.js';
+import { renderFrame } from './ascii-sprites.js';
 
 const { invoke } = window.__TAURI__.core;
 
@@ -124,12 +125,9 @@ export function showHistoryTab() {
   }
 }
 
-// Sprite renderer for the live session pin (destroyed on exit)
-let _livePinRenderer = null;
-
 function _teardownLivePin() {
-  _livePinRenderer?.destroy();
-  _livePinRenderer = null;
+  const wrap = document.getElementById('history-live-sprite');
+  if (wrap) wrap.innerHTML = '';
 }
 
 /** Render the active live session's card at the top of #history-current. */
@@ -165,9 +163,15 @@ function showLiveSessionPin() {
   $.historyCurrent.appendChild(card);
   $.historyCurrent.classList.remove('hidden');
 
-  // Attach sprite renderer
+  // Inject ASCII familiar into history live pin
   const wrap = document.getElementById('history-live-sprite');
-  if (wrap) _livePinRenderer = new SpriteRenderer(wrap, s.charIndex);
+  if (wrap && s.familiar) {
+    wrap.style.setProperty('--familiar-hue', s.familiarHue ?? '#FFDD44');
+    const pre = document.createElement('pre');
+    pre.className = 'familiar-pre';
+    pre.textContent = renderFrame(s.familiar.species, 0, s.familiar.eye, s.familiar.hat).join('\n');
+    wrap.appendChild(pre);
+  }
 }
 
 export function showLiveTab() {

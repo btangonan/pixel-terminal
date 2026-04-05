@@ -1,0 +1,44 @@
+Retro Sprite Maker: Style & Anatomy Guide
+
+1. Bounding Box & Scale
+
+Grid Size: Every frame is strictly 16x16 pixels.
+
+Character Size: Characters must occupy a maximum of 12x12 to 14x14 pixels within the frame. This ensures there is enough empty padding (whitespace) around the character so that limbs do not clip outside the 16x16 canvas during the walking animation.
+
+2. Outlines & Line Art
+
+Thickness: Always use a solid, dark, 1-pixel thick outline that encompasses the entire character.
+
+Continuity: There must be no floating pixels or disconnected body parts. The outline must be unbroken.
+
+Anti-Aliasing: ZERO anti-aliasing. Edges must be completely hard and pixel-perfect.
+
+3. Facial Features
+
+Eyes: Eyes must be extremely simple—usually a single 1x1 pixel, or at most a 1x2 pixel vertical rectangle.
+
+Style: Maintain a "kawaii" / minimalist aesthetic. Absolutely no highly detailed anime eyes, pupils, or complex facial expressions.
+
+4. Color Palette Constraints
+
+Limit: Strict limit of 3 to 5 colors maximum per character.
+
+Standard Roles: 1. Dark Outline (almost black, e.g., dark brown or dark gray).
+2. Base Body Color.
+3. Highlight / Belly / Snout Color.
+4. Eye Color (can sometimes be the same as the outline).
+5. (Optional) One accent color for a specific detail (like a red blush or pink inner ear).
+
+Shading: Zero gradients. Flat colors only.
+
+5. Animation Rules (The 4-Frame Walk Cycle)
+The character must be animated across four 16x16 frames (arranged left-to-right to create a 64x16 sprite sheet):
+
+Frame 1 (Pixels x:0 to x:15): Neutral stand. Legs are together and weight is centered.
+
+Frame 2 (Pixels x:16 to x:31): Left foot/leg steps 1 pixel to the left. The entire body shifts down by 1 pixel to simulate the step weight.
+
+Frame 3 (Pixels x:32 to x:47): Neutral stand. Exact duplicate of Frame 1. The body shifts back up 1 pixel.
+
+Frame 4 (Pixels x:48 to x:63): Right foot/leg steps 1 pixel to the right. The entire body shifts down by 1 pixel.

@@ -1,17 +1,3 @@
 {
-  "mcpServers": {
-    "chroma": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": ["-qq", "chroma-mcp", "--client-type", "persistent", "--data-dir", "/Users/bradleytangonan/Projects/pixel-terminal/.chroma"],
-      "env": {
-        "ANONYMIZED_TELEMETRY": "FALSE",
-        "PYTHONUNBUFFERED": "1",
-        "TOKENIZERS_PARALLELISM": "False",
-        "CHROMA_SERVER_KEEP_ALIVE": "0",
-        "CHROMA_CLIENT_TIMEOUT": "0"
-      },
-      "initializationOptions": {"timeout": 0, "keepAlive": true, "retryAttempts": 5}
-    }
-  }
+  "mcpServers": {}
 }

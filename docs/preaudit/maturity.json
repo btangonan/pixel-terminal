@@ -1,0 +1,44 @@
+{
+  "scores": {
+    "loc_discipline": {
+      "score": 0,
+      "max": 3,
+      "evidence": "12/25 source files exceed 300 LOC (48%). styles.css at 1967 LOC is 6.5× the limit. lib.rs at 602 LOC. vexil_master.py at 716 LOC.",
+      "rule": "Score 0: Frequent >500 LOC files"
+    },
+    "validation_coverage": {
+      "score": 0,
+      "max": 3,
+      "evidence": "0% of Tauri IPC commands have input validation (path sanitization, type guards, allowlists). Only markdown rendering path uses DOMPurify. send_signal validates neither pid nor signal.",
+      "rule": "Score 0: No schema validation"
+    },
+    "secrets_hygiene": {
+      "score": 2,
+      "max": 3,
+      "evidence": "No hardcoded secrets found. No .env files. But CSP is null, no secret manager, no lint rule enforcing .env usage.",
+      "rule": "Score 2: Env + no secrets (missing lint + secret manager for score 3)"
+    },
+    "state_persistence": {
+      "score": 1,
+      "max": 3,
+      "evidence": "In-memory session state (lost on crash). localStorage for small UI prefs. File-based for history (read-only). No crash recovery, no idempotency keys, no session re-attach.",
+      "rule": "Score 1: Mixed ad-hoc persistence"
+    },
+    "errors_retry_idempotency": {
+      "score": 1,
+      "max": 3,
+      "evidence": "Rust uses Result<T,String> consistently. JS has 10+ silent catch(_){} blocks. No retry logic. No structured error format. No idempotency.",
+      "rule": "Score 1: Some try/catch"
+    },
+    "testing_ci": {
+      "score": 0,
+      "max": 3,
+      "evidence": "No test framework. No CI. One bespoke structural smoke test (test_auto.cjs, 220 LOC) not wired to any gate.",
+      "rule": "Score 0: No tests"
+    }
+  },
+  "total": 4,
+  "max": 18,
+  "percent": 22,
+  "label": "Early / Prototype Stage"
+}

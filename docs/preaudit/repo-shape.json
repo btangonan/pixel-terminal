@@ -1,0 +1,21 @@
+{
+  "type": "single-repo",
+  "product_name": "Pixel Claude",
+  "identifier": "com.bradleytangonan.pixel-terminal",
+  "version": "0.1.0",
+  "framework": "Tauri v2 (macOS desktop app)",
+  "languages": {
+    "frontend": "Vanilla JS (ES modules, no bundler, no framework)",
+    "backend": "Rust (Tauri 2, Tokio async runtime)",
+    "scripts": "Python 3, Node.js"
+  },
+  "infra": {
+    "ws_bridge": "127.0.0.1:9876 (local voice/Omi WebSocket)",
+    "shell_spawn": ["/opt/homebrew/bin/claude", "/bin/sh", "/opt/homebrew/bin/python3"],
+    "storage": "localStorage (browser), ~/.claude/projects/ JSONL files (read), /tmp/vexil_feed.jsonl (write)"
+  },
+  "bundler": null,
+  "test_framework": null,
+  "ci": null,
+  "source_files_approx": 50
+}

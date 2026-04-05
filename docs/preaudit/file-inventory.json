@@ -1,0 +1,32 @@
+{
+  "source_files": [
+    { "path": "src/styles.css",             "loc": 1967, "over_300": true },
+    { "path": "src/companion.js",           "loc": 710,  "over_300": true },
+    { "path": "src/history.js",             "loc": 528,  "over_300": true },
+    { "path": "src/session-lifecycle.js",   "loc": 491,  "over_300": true },
+    { "path": "src/voice.js",              "loc": 431,  "over_300": true },
+    { "path": "src/events.js",             "loc": 418,  "over_300": true },
+    { "path": "src/app.js",               "loc": 402,  "over_300": true },
+    { "path": "src/cards.js",             "loc": 397,  "over_300": true },
+    { "path": "src/attachments.js",        "loc": 330,  "over_300": true },
+    { "path": "scripts/vexil_master.py",   "loc": 716,  "over_300": true },
+    { "path": "scripts/sprite-gen.js",     "loc": 471,  "over_300": true },
+    { "path": "src-tauri/src/lib.rs",      "loc": 602,  "over_300": true },
+    { "path": "src/session.js",            "loc": 266,  "over_300": false },
+    { "path": "src/slash-menu.js",         "loc": 174,  "over_300": false },
+    { "path": "src/index.html",            "loc": 183,  "over_300": false },
+    { "path": "src/messages.js",           "loc": 171,  "over_300": false },
+    { "path": "src/ascii-sprites.js",      "loc": 153,  "over_300": false },
+    { "path": "src/dom.js",               "loc": 139,  "over_300": false },
+    { "path": "src/nim.js",               "loc": 40,   "over_300": false },
+    { "path": "src/logger.js",            "loc": 11,   "over_300": false },
+    { "path": "src-tauri/src/ws_bridge.rs","loc": 290,  "over_300": false },
+    { "path": "scripts/benchmark.js",      "loc": 175,  "over_300": false },
+    { "path": "scripts/generate-buddy.js", "loc": 149,  "over_300": false },
+    { "path": "scripts/start_vexil_daemon.py","loc": 27,"over_300": false },
+    { "path": "test_auto.cjs",            "loc": 220,  "over_300": false }
+  ],
+  "files_over_300": 12,
+  "files_over_500": 6,
+  "files_over_1000": 1
+}

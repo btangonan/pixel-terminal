@@ -30,11 +30,13 @@ mcp__gemini-memory__memory_query {
 }
 ```
 
-## 🔍 Retrieval Checklist Before Coding
-1. Query Chroma for related memories.
-2. Check repo files that match the task.
-3. List open PRs or issues that touch the same area.
-4. Only then propose changes.
+## 🔴 Retrieval Order (MANDATORY — memory before files)
+**NEVER read files to orient yourself before querying memory first.**
+1. `mcp__gemini-memory__memory_query` — collection `pixel_terminal` + `"*"` for cross-project. Always first.
+2. Only then read repo files that match the task.
+3. Only then propose changes.
+
+Skipping memory and reading files cold = wrong order. If you catch yourself doing it, stop and query memory first.
 
 ## 📝 Memory Checkpoint Rules
 
@@ -67,6 +69,54 @@ When the user's message starts with the companion's name (case-insensitive):
 - Calls out what was missed or buried. Never restates what's obvious.
 
 For non-companion messages: respond normally as Claude.
+
+## 🖼️ Dock Icon System — DO NOT TOUCH WITHOUT READING THIS
+
+**Cost to re-derive: hours + thousands of tokens. Read first.**
+
+### The two icon files
+| File | Used for | Shape |
+|---|---|---|
+| `src-tauri/icons/icon_master_1024.png` | `.icns`, bundle PNGs, Tauri icon table | Flat square — macOS applies squircle to `.app` bundle icons automatically |
+| `src-tauri/icons/icon_master_1024_rounded.png` | `lib.rs` `include_bytes!` → NSDockTile.contentView | Pre-baked squircle (transparent corners) |
+
+**NEVER use the flat square for `lib.rs`. NEVER use the rounded PNG for the bundle.**
+
+### Tauri lifecycle — CRITICAL
+Tauri v2 (`tauri-2.10.3/src/app.rs`) calls `setApplicationIconImage` internally on `RuntimeRunEvent::Ready`, which fires **after** `setup()`. Setting the dock icon in `setup()` is silently overridden.
+
+**The dock icon MUST be set in `RunEvent::Ready` via `build()` + `app.run()`:**
+```rust
+.build(tauri::generate_context!())
+.expect("...")
+.run(|_app_handle, event| {
+    if let tauri::RunEvent::Ready = event {
+        #[cfg(target_os = "macos")]
+        set_squircle_dock_icon(); // defined below run()
+    }
+});
+```
+
+### NSDockTile.contentView does NOT apply the squircle mask
+macOS 26 Tahoe forces squircle on `.app` bundle icons — but `NSDockTile.contentView` **bypasses** that enforcement. It renders whatever NSView you give it as-is. Squircle must be pre-baked in the PNG.
+
+### Rebuilding icons
+```bash
+cd src-tauri/icons && python3 build_icons.py
+# Then MUST touch lib.rs to force include_bytes! re-embed:
+touch src-tauri/src/lib.rs
+# Then rebuild:
+npm run tauri dev
+```
+Skipping the `touch` = old icon bytes silently re-used from incremental build cache.
+
+### Icon source
+The logo is the figlet ASCII art `a` from `sprites/logos/a.txt`, rendered in Menlo at ~62% canvas fill, orange `#d87756` on dark `#0d0d0d`. Centering uses a two-pass render (layout → measure actual ink bounds → re-render corrected) because the figlet `a` is right-heavy. See `build_icons.py:render_ascii_art_logo()`.
+
+## 🪵 Live Debug Log
+`/tmp/pixel-terminal.log` — written by `launch.command` via `tee`. Contains all webview events, `pxLog` output, Vexil master commentary, and JS errors (unhandled rejections show here).
+
+**When debugging pixel-terminal: read this file first.** Don't ask "can I see the session?" — just `tail /tmp/pixel-terminal.log`.
 
 ## ⚡ Activation
 Read this file at session start.

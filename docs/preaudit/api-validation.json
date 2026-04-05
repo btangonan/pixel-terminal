@@ -1,0 +1,48 @@
+{
+  "summary": "No input validation on any Tauri IPC commands. No schema enforcement.",
+  "tauri_commands": {
+    "read_file_as_base64": {
+      "path_validated": false,
+      "note": "Accepts any absolute path from JS — no prefix check, no allowlist"
+    },
+    "read_file_as_text": {
+      "path_validated": false,
+      "note": "Same — arbitrary file read from webview"
+    },
+    "write_file_as_text": {
+      "path_validated": false,
+      "note": "Arbitrary file write — creates parent dirs too"
+    },
+    "append_line_to_file": {
+      "path_validated": false,
+      "note": "Arbitrary append — O_APPEND but no path guard"
+    },
+    "send_signal": {
+      "pid_validated": false,
+      "signal_validated": false,
+      "note": "CRITICAL: no PID allowlist, any signal (incl. SIGKILL) to any PID"
+    },
+    "scan_session_history": {
+      "path_validated": false,
+      "note": "Walks project_path subtree — no sandbox"
+    },
+    "load_session_history": {
+      "path_validated": false,
+      "note": "Reads any .jsonl file path"
+    }
+  },
+  "frontend_validation": {
+    "markdown_rendering": "DOMPurify + marked.js (dom.js:8) — COVERED",
+    "innerHTML_direct_injection": [
+      "src/cards.js:225 — dialog.innerHTML (template literal with session data)",
+      "src/cards.js:275 — card.innerHTML (template literal with session data)",
+      "src/companion.js:144 — wrap.innerHTML (template literal)",
+      "src/history.js:152 — card.innerHTML (template literal with message content)",
+      "src/attachments.js:214 — container.innerHTML (attachment list)",
+      "src/events.js:145 — bubble.innerHTML (stream message — uses cached _html from DOMPurify)"
+    ],
+    "note": "events.js:145 uses pre-sanitized _html. cards.js, history.js injections appear template-only (no LLM content) — low risk but unverified by schema."
+  },
+  "schema_tools": null,
+  "coverage_estimate": "~5% (only markdown path sanitized; all IPC commands unvalidated)"
+}

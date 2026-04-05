@@ -1,0 +1,206 @@
+/* ── Session LIVE/HIST tabs ───────────────── */
+
+#session-tabs {
+  display: flex;
+  flex: 1;
+  gap: 3px;
+  align-items: center;
+  padding: 0 6px;
+}
+
+.session-tab {
+  flex: 1;
+  text-align: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: var(--text-mid);
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 1px 0;
+  cursor: pointer;
+  opacity: 0.65;
+  transition: color 0.15s, border-color 0.15s, opacity 0.15s;
+}
+.session-tab:hover { opacity: 1; color: var(--accent); }
+.session-tab.active {
+  color: var(--accent);
+  border-color: var(--border-hi);
+  opacity: 1;
+}
+
+/* ── History view ─────────────────────────── */
+
+#history-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+#history-view.hidden { display: none; }
+
+#history-current { flex-shrink: 0; background: linear-gradient(to left, rgba(255,255,255,0.05), transparent); padding: 4px 3px 0; }
+#history-current.hidden { display: none; }
+#history-current .history-pin-label { font-size: var(--fs-xs); font-weight: 700; color: var(--accent); letter-spacing: 0.1em; padding: 4px 8px 0; }
+#history-current .history-card { border-right-color: var(--accent); background: linear-gradient(to left, rgba(255,255,255,0.07), transparent); cursor: default; }
+#history-current .history-card:hover { background: linear-gradient(to left, rgba(255,255,255,0.07), transparent); border-right-color: var(--accent); }
+
+#history-search-wrap.hidden { display: none; }
+#history-search-wrap {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#history-search {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--fs-sm);
+  padding: 2px 6px;
+  outline: none;
+  transition: border-color 0.1s;
+}
+#history-search:focus { border-color: var(--border-hi); }
+#history-search::placeholder { color: var(--text-mute); }
+
+#history-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+#history-list::-webkit-scrollbar { width: 3px; }
+#history-list::-webkit-scrollbar-track { background: transparent; }
+#history-list::-webkit-scrollbar-thumb { background: var(--border-hi); }
+
+/* ── History cards ────────────────────────── */
+
+.history-card {
+  padding: 5px 7px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: border-color 0.1s, background 0.1s;
+  border-radius: 1px;
+}
+.history-card:hover { border-right-color: var(--border-hi); background: var(--bg2); }
+.history-card.active { border-right-color: var(--text-dim); background: var(--bg2); }
+.history-card.loading { opacity: 0.5; pointer-events: none; }
+
+.history-card-name {
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.02em;
+}
+.history-card-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1px;
+}
+.history-card-date {
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+}
+.history-card-size {
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+  opacity: 0.7;
+}
+.history-card-preview {
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+  font-style: italic;
+}
+
+.history-empty {
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+  text-align: center;
+  padding: 16px 8px;
+  font-style: italic;
+}
+
+/* ── History find bar (Chrome-style upper-right overlay) ── */
+
+#history-find {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 5px 8px;
+  background: var(--bg2);
+  border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  min-width: 280px;
+}
+#history-find.hidden { display: none; }
+
+#history-find-input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--fs-sm);
+  padding: 2px 6px;
+  outline: none;
+  min-width: 0;
+  transition: border-color 0.1s;
+}
+#history-find-input:focus { border-color: var(--border-hi); }
+#history-find-input::placeholder { color: var(--text-mute); }
+
+#history-find-status {
+  font-size: var(--fs-xs);
+  color: var(--error-col);
+  flex-shrink: 0;
+  min-width: 48px;
+  text-align: center;
+}
+#history-find-prev,
+#history-find-next {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--font);
+  font-size: var(--fs-sm);
+  line-height: 1;
+  padding: 1px 5px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.1s, color 0.1s;
+}
+#history-find-prev:hover,
+#history-find-next:hover { border-color: var(--border-hi); color: var(--text); }
+
+#history-find-close {
+  background: transparent;
+  border: none;
+  color: var(--text-mute);
+  font-family: var(--font);
+  font-size: var(--fs-base);
+  padding: 0 3px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.1s;
+  margin-left: 1px;
+}
+#history-find-close:hover { color: var(--text); }
+

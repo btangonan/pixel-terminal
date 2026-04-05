@@ -48,172 +48,163 @@ const SPRITE_DATA = {
   'dragon': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAAQCAYAAACm53kpAAAA0klEQVR4nO2V0Q2EIAyGu8IlTMAsDucsTnIPN8SN4AY964mHgm0RTQSvCQm0/f7SJiLA35b26izuidXCAzYWuwcEieSjWNW8S+JWTLwK3of7/onGmPlMe/JxIkfy+G6+y7+85zujvmp66gYK5H8CbtKxpblAoXw4xRTwavzA+Lmjn/l8ti+hfHyuytN+fWZhbIfE1gbQuJ9iEivxGo099bP5GKwV2Wo+ZQg59bN5DpZEpOY1Q8ipfwQ/m/QrSXrECuQXImu/VqB0HtzLqfXXxt/OPvLnWmPWtvjRAAAAAElFTkSuQmCC'
 };
 
-// ── SpriteRenderer ─────────────────────────────────────────
-// CSS background-image + RAF. No canvas. No image load events.
-// Sheet 64x16 displayed at 128x32 (2x). backgroundPosition shifts per frame.
+const IDENTITY_SEQ_KEY = 'pixel-terminal-identity-seq-v11'; // kept for app.js localStorage cleanup
 
-const ANIMALS = ['cat2', 'snake', 'penguin', 'octopus', 'crab', 'rat', 'seal', 'rabbit', 'cat', 'frog3', 'octopus-90', 'octopus-180', 'octopus-270', 'cat-120', 'rabbit-120', 'penguin-120', 'crab-120', 'rat-120', 'seal-120', 'snake-120', 'cat2-120', 'cat-195', 'rabbit-195', 'penguin-195', 'crab-195', 'rat-195', 'seal-195', 'snake-195', 'cat2-195', 'cat-270', 'rabbit-270', 'penguin-270', 'crab-270', 'rat-270', 'seal-270', 'snake-270', 'cat2-270'];
-const IDENTITY_SEQ_KEY = 'pixel-terminal-identity-seq-v11';
-// First BASE_ANIMAL_COUNT entries in ANIMALS are 0-degree originals; rest are hue-rotated.
-// Octopus base is at index 3; octopus-90/180/270 are hue-rotated variants in the hue batch.
-const BASE_ANIMAL_COUNT = 10;
+// ── Familiar roll algorithm (per-project ASCII buddy) ────────────────────────
+// Deterministic: same projectPath always produces same species/rarity/eye/hat/stats.
+// Bones are never stored — recomputed on every session create from path hash.
 
-function _shuffle(arr) {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+function _fnv1a(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
   }
-  return a;
+  return h;
 }
 
-// Map each base animal name → array of ANIMALS indices for its hue variants
-const _HUE_VARIANTS = {};
-for (let i = 0; i < BASE_ANIMAL_COUNT; i++) {
-  const base = ANIMALS[i];
-  _HUE_VARIANTS[base] = [];
-  for (let j = BASE_ANIMAL_COUNT; j < ANIMALS.length; j++) {
-    if (ANIMALS[j].startsWith(base + '-')) _HUE_VARIANTS[base].push(j);
-  }
+function _mulberry32(seed) {
+  let a = seed >>> 0;
+  return function() {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
-function getNextIdentity() {
-  // Deals complete rounds of BASE_ANIMAL_COUNT unique base types before repeating.
-  // Round 0: base (0-hue) animals, shuffled randomly.
-  // Round 1+: each base type uses a hue variant (cycling through available variants).
-  // Animals without hue variants (frog3) reuse their base sprite on round 1+.
-  const store = JSON.parse(localStorage.getItem(IDENTITY_SEQ_KEY) || '{"idx":0,"seq":null,"round":0}');
+const FAMILIAR_SALT = 'pixel-familiar-2026';
 
-  if (!store.seq || store.idx >= store.seq.length) {
-    const round = store.round || 0;
-    const baseOrder = _shuffle(Array.from({ length: BASE_ANIMAL_COUNT }, (_, i) => i));
+// Syllable pools — five thematic categories (Asian Folklore, Polynesian, Tolkien/Elven, Valyrian, Cyber-Pet)
+const _NAME_STARTS = [
+  // Asian Folklore & Yokai
+  'Ryu', 'Sen', 'Kai', 'Jin', 'Feng', 'Qin', 'Bai', 'Shir', 'Zen', 'Tao',
+  // Polynesian
+  'Ka', 'Ki', 'Ma', 'Wa', 'Ra', 'Ori', 'Alo', 'Koa', 'Lani', 'Mana', 'Nalu',
+  // Tolkien / Elven
+  'Aer', 'Cal', 'Gil', 'Lin', 'Sil', 'Thal', 'Fin',
+  'Ael', 'Aran', 'Cael', 'Elan', 'Faer', 'Helm', 'Saer', 'Bael',
+  // Valyrian
+  'Drac', 'Vae', 'Tar', 'Rys', 'Jae', 'Zho', 'Laen',
+  'Aeg', 'Daen', 'Nar', 'Tor',
+  // Cyber-Pet
+  'Zot', 'Blip', 'Xel', 'Hex', 'Rez', 'Vox', 'Nyx',
+  'Arc', 'Chip', 'Flux', 'Kern', 'Var', 'Sig', 'Rad',
+];
+const _NAME_ENDS = [
+  // Asian Folklore
+  'on', 'rin', 'kin', 'gu', 'yu', 'zen',
+  // Polynesian
+  'kai', 'mai', 'aia', 'lua', 'alo', 'ana', 'ila', 'ali',
+  // Tolkien / Elven
+  'wen', 'dal', 'dor', 'en', 'shan', 'aen', 'ion', 'ros', 'mir', 'las', 'ael',
+  // Valyrian
+  'rys', 'orn', 'oz', 'ur', 'ys',
+  // Cyber-Pet
+  'ron', 'bit', 'rom', 'arc', 'ware',
+];
+// Hard blocks — real-world IP, known words, or sounds bad
+const _NAME_BLOCKLIST = new Set(['Finbit', 'Aegon', 'Radon', 'Torys']);
 
-    if (round === 0) {
-      // First round: all base sprites, shuffled
-      store.seq = baseOrder;
-    } else {
-      // Subsequent rounds: pick a hue variant for each base type
-      store.seq = baseOrder.map(baseIdx => {
-        const variants = _HUE_VARIANTS[ANIMALS[baseIdx]];
-        if (!variants || variants.length === 0) return baseIdx; // frog3: no variants
-        return variants[(round - 1) % variants.length];
-      });
-    }
-    store.idx = 0;
-    store.round = round + 1;
-  }
+export const FAMILIAR_SPECIES = [
+  'duck', 'goose', 'blob', 'cat', 'dragon', 'octopus', 'owl',
+  'penguin', 'turtle', 'snail', 'ghost', 'axolotl', 'capybara',
+  'cactus', 'robot', 'rabbit', 'mushroom', 'chonk',
+];
+const _FAMILIAR_EYE_STYLES  = ['dot', 'star', 'x', 'circle', 'at', 'degree'];
+const _FAMILIAR_HATS        = ['none', 'crown', 'tophat', 'propeller', 'halo', 'wizard', 'beanie', 'tinyduck'];
+const _FAMILIAR_STAT_NAMES  = ['DEBUGGING', 'PATIENCE', 'CHAOS', 'WISDOM', 'SNARK'];
+const _FAMILIAR_EYE_CHARS   = { dot: '·', star: '✦', x: '×', circle: '◉', at: '@', degree: '°' };
+// Stat bands: dumpMax < midMin < midMax < peakMin — no tier bleed, no range overlap.
+const _FAMILIAR_RARITIES = [
+  { name: 'common',    weight: 60, midMin: 10, midMax: 40,  peakMin: 55,  peakMax: 84,  dumpMin: 1,  dumpMax: 9  },
+  { name: 'uncommon',  weight: 25, midMin: 20, midMax: 55,  peakMin: 65,  peakMax: 94,  dumpMin: 10, dumpMax: 19 },
+  { name: 'rare',      weight: 10, midMin: 30, midMax: 65,  peakMin: 75,  peakMax: 100, dumpMin: 20, dumpMax: 29 },
+  { name: 'epic',      weight: 4,  midMin: 40, midMax: 74,  peakMin: 85,  peakMax: 100, dumpMin: 30, dumpMax: 39 },
+  { name: 'legendary', weight: 1,  midMin: 55, midMax: 84,  peakMin: 100, peakMax: 100, dumpMin: 40, dumpMax: 50 },
+];
 
-  const animalIndex = store.seq[store.idx];
-  store.idx++;
-  localStorage.setItem(IDENTITY_SEQ_KEY, JSON.stringify(store));
-  return { animalIndex };
+// ── Re-roll helpers ──────────────────────────────────────────
+export function getFamiliarRerollCount(projectPath) {
+  return parseInt(localStorage.getItem(`familiar-reroll-${projectPath}`) || '0', 10);
+}
+export function incrementFamiliarReroll(projectPath) {
+  const count = getFamiliarRerollCount(projectPath) + 1;
+  localStorage.setItem(`familiar-reroll-${projectPath}`, String(count));
+  return count;
 }
 
-// Per-sprite X offset (3x px) to horizontally center each character within the 48px frame.
-// Derived from: round(24 - vis_center_px) where vis_center_px = (left_col + right_col) / 2 × 3.
-// Positive X shifts the background right, moving the character toward horizontal center.
-// Hue variants share geometry with their base animal.
-const SPRITE_X_OFFSETS = {
-  // 0px — rat is already centered (vis_center = 8.0)
-  'rat':0,'rat-120':0,'rat-195':0,'rat-270':0,
-  // 2px — cat, cat2, snake, penguin, crab, frog3 (vis_center ≈ 7.5)
-  'cat':2,'cat2':2,'snake':2,'penguin':2,'crab':2,'frog3':2,
-  'cat-120':2,'cat2-120':2,'snake-120':2,'penguin-120':2,'crab-120':2,
-  'cat-195':2,'cat2-195':2,'snake-195':2,'penguin-195':2,'crab-195':2,
-  'cat-270':2,'cat2-270':2,'snake-270':2,'penguin-270':2,'crab-270':2,
-  // 3px — rabbit, seal (vis_center = 7.0)
-  'rabbit':3,'seal':3,
-  'rabbit-120':3,'seal-120':3,
-  'rabbit-195':3,'seal-195':3,
-  'rabbit-270':3,'seal-270':3,
-  // 4px — all octopi (vis_center ≈ 6.5, padded 16px frame)
-  'octopus':4,'octopus-90':4,'octopus-180':4,'octopus-270':4,
-};
+export function rollFamiliarBones(projectPath, rerollCount = 0) {
+  const base  = projectPath || ('__anon-' + Math.random().toString(36).slice(2));
+  const input = rerollCount > 0 ? `${base}-r${rerollCount}` : base;
+  const seed  = _fnv1a(input + FAMILIAR_SALT);
+  const rng   = _mulberry32(seed);
 
-// Per-sprite Y offset (3x px) to vertically center each character within the 48px frame.
-// Derived from: round(((16 - vis_height) / 2 - top) × 3)  where top/bot are the first/last
-// rows with non-transparent pixels. Negative shifts the background UP to remove headroom.
-// Hue variants share geometry with their base animal.
-const SPRITE_Y_OFFSETS = {
-  // top=3, bot=12 → 0px (rabbit: naturally centered)
-  'rabbit':0,'rabbit-120':0,'rabbit-195':0,'rabbit-270':0,
-  // top=3, bot=13 → −2px (cat, cat2, snake)
-  'cat':-2,'cat2':-2,'snake':-2,
-  'cat-120':-2,'cat2-120':-2,'snake-120':-2,
-  'cat-195':-2,'cat2-195':-2,'snake-195':-2,
-  'cat-270':-2,'cat2-270':-2,'snake-270':-2,
-  // top=4, bot=12 → −2px (rat)
-  'rat':-2,'rat-120':-2,'rat-195':-2,'rat-270':-2,
-  // top=4, bot=13 → −3px (octopus variants)
-  'octopus':-3,'octopus-90':-3,'octopus-180':-3,'octopus-270':-3,
-  // top=5, bot=12 → −3px (crab, seal)
-  'crab':-3,'crab-120':-3,'crab-195':-3,'crab-270':-3,
-  'seal':-3,'seal-120':-3,'seal-195':-3,'seal-270':-3,
-  // top=5, bot=13 → −4px (penguin)
-  'penguin':-4,'penguin-120':-4,'penguin-195':-4,'penguin-270':-4,
-  // top=6, bot=15 → −9px (frog3)
-  'frog3':-9,
-};
+  // Roll 1: Rarity (weighted)
+  const rarityRoll = rng() * 100;
+  let cumul = 0, rarity = _FAMILIAR_RARITIES[0];
+  for (const r of _FAMILIAR_RARITIES) { cumul += r.weight; if (rarityRoll < cumul) { rarity = r; break; } }
 
-class SpriteRenderer {
-  constructor(el, charIndex) {
-    this.el = el;
-    this._frameIdx = 0;
-    this._status = 'idle';
-    this._raf = null;
-    this._lastTs = 0;
-    this._FPS = 6;
+  // Roll 2: Species (uniform)
+  const species = FAMILIAR_SPECIES[Math.floor(rng() * FAMILIAR_SPECIES.length)];
 
-    const animal = ANIMALS[charIndex % ANIMALS.length];
-    const data = SPRITE_DATA[animal];
-    this._xOffset = SPRITE_X_OFFSETS[animal] ?? 0;
-    this._yPx = (SPRITE_Y_OFFSETS[animal] ?? 0) + 'px';
+  // Roll 3: Eye (uniform)
+  const eyeStyle = _FAMILIAR_EYE_STYLES[Math.floor(rng() * _FAMILIAR_EYE_STYLES.length)];
+  const eye = _FAMILIAR_EYE_CHARS[eyeStyle] ?? '·';
 
-    el.style.width = '48px';
-    el.style.height = '48px';
-    el.style.flexShrink = '0';
-    el.style.backgroundImage = "url('" + data + "')";
-    el.style.backgroundSize = '192px 48px';
-    el.style.backgroundRepeat = 'no-repeat';
-    el.style.backgroundPosition = this._xOffset + 'px ' + this._yPx;
-    el.style.imageRendering = 'pixelated';
-    // No hue filter — sprites use their original pixel-art palette
-    // Loop starts only when setStatus transitions to an active state
+  // Roll 4: Hat (common always 'none'; others uniform across all 8)
+  let hat = 'none';
+  if (rarity.name !== 'common') hat = _FAMILIAR_HATS[Math.floor(rng() * _FAMILIAR_HATS.length)];
+
+  // Roll 5: Shiny (1% independent)
+  const shiny = rng() < 0.01;
+
+  // Rolls 6-10: Stats — peak, dump, 3 mid values
+  const peakIdx = Math.floor(rng() * 5);
+  const dumpRaw = Math.floor(rng() * 4);
+  const dumpIdx = dumpRaw >= peakIdx ? dumpRaw + 1 : dumpRaw;
+  const { midMin, midMax, peakMin, peakMax, dumpMin, dumpMax } = rarity;
+  const stats = {};
+  for (let i = 0; i < 5; i++) {
+    let v;
+    if      (i === peakIdx) { v = peakMin === peakMax ? peakMax : Math.floor(rng() * (peakMax - peakMin + 1)) + peakMin; }
+    else if (i === dumpIdx) { v = Math.floor(rng() * (dumpMax - dumpMin + 1)) + dumpMin; }
+    else                    { v = Math.floor(rng() * (midMax - midMin + 1)) + midMin; }
+    stats[_FAMILIAR_STAT_NAMES[i]] = v;
   }
 
-  setStatus(status) {
-    if (this._status === status) return;
-    const wasInactive = this._status === 'idle' || this._status === 'error' || this._status === 'waiting';
-    this._status = status;
-    this._frameIdx = 0;
-    this._lastTs = 0; // reset so first frame of new state doesn't skip delay
-    this.el.style.backgroundPosition = this._xOffset + 'px ' + this._yPx; // snap to frame 0 immediately
-    this._FPS = 3;
-    // Animate only during active work — waiting/idle/error hold frame 0
-    const isInactive = status === 'idle' || status === 'error' || status === 'waiting';
-    if (wasInactive && !isInactive && !this._raf) this._startLoop();
+  // Roll N+1, N+2: Name (syllable combiner — deterministic, runs after stats to preserve existing stat RNG)
+  const nameStart = _NAME_STARTS[Math.floor(rng() * _NAME_STARTS.length)];
+  const endBase   = Math.floor(rng() * _NAME_ENDS.length);
+  let name = nameStart + _NAME_ENDS[endBase];
+  // Rotate through remaining ends if blocklisted — no extra rng() calls, stays deterministic
+  for (let i = 1; i < _NAME_ENDS.length && _NAME_BLOCKLIST.has(name); i++) {
+    name = nameStart + _NAME_ENDS[(endBase + i) % _NAME_ENDS.length];
   }
 
-  _startLoop() {
-    const loop = (ts) => {
-      // Self-cancel when inactive — don't keep spinning at 60fps doing nothing
-      if (this._status === 'idle' || this._status === 'error' || this._status === 'waiting') {
-        this._raf = null;
-        return;
-      }
-      this._raf = requestAnimationFrame(loop);
-      if (ts - this._lastTs >= 1000 / this._FPS) {
-        this._frameIdx = (this._frameIdx + 1) % 4;
-        this.el.style.backgroundPosition = ((-this._frameIdx * 48) + this._xOffset) + 'px ' + this._yPx;
-        this._lastTs = ts;
-      }
-    };
-    this._raf = requestAnimationFrame(loop);
-  }
+  return { species, rarity: rarity.name, eye, hat, shiny, stats, name };
+}
 
-  destroy() {
-    if (this._raf) { cancelAnimationFrame(this._raf); this._raf = null; }
-  }
+// ── Per-project hue assignment (ephemeral — resets on restart) ───────────────
+// Same project opened N times gets the Nth hue from the palette.
+
+const FAMILIAR_HUE_PALETTE = ['#FFDD44', '#FF8C42', '#40E0D0', '#FF6EC7'];
+const _projectSlots = new Map(); // projectPath → sessionId[]
+
+export function assignFamiliarHue(projectPath, sessionId) {
+  if (!_projectSlots.has(projectPath)) _projectSlots.set(projectPath, []);
+  const slots = _projectSlots.get(projectPath);
+  const hue = FAMILIAR_HUE_PALETTE[slots.length % FAMILIAR_HUE_PALETTE.length];
+  slots.push(sessionId);
+  return hue;
+}
+
+export function releaseFamiliarHue(projectPath, sessionId) {
+  if (!_projectSlots.has(projectPath)) return;
+  const slots = _projectSlots.get(projectPath);
+  const idx = slots.indexOf(sessionId);
+  if (idx >= 0) slots.splice(idx, 1);
+  if (slots.length === 0) _projectSlots.delete(projectPath);
 }
 
 // ── Self-directory detection ────────────────────────────────
@@ -243,8 +234,6 @@ const sessions = new Map();
 /** @type {Map<string, {messages: Object[]}>} */
 const sessionLogs = new Map();
 
-/** @type {Map<string, SpriteRenderer>} — one renderer per session card */
-const spriteRenderers = new Map();
 
 let activeSessionId = null;
 
@@ -267,8 +256,9 @@ function formatTokens(n) {
 }
 
 // ── Exports ────────────────────────────────────────────────
-export { SPRITE_DATA, ANIMALS, SpriteRenderer, IDENTITY_SEQ_KEY, getNextIdentity };
-export { sessions, sessionLogs, spriteRenderers, syncOmiSessions };
+export { SPRITE_DATA, IDENTITY_SEQ_KEY };
+export { sessions, sessionLogs, syncOmiSessions };
+export { FAMILIAR_HUE_PALETTE };
 export { isSelfDirectory, formatTokens };
 
 // activeSessionId as getter/setter — ES modules cannot export mutable let bindings

@@ -1,0 +1,159 @@
+/* ── Vexil panel — outer container with hue border ── */
+#vexil-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 40%;
+  min-height: 0;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+/* ── ASCII buddy sprite (inside vexil-bio header row) ── */
+#vexil-ascii {
+  display: flex;
+  align-items: flex-end;
+  flex-shrink: 0;
+  height: 60px; /* 5 lines × 12px — fixed so bio row never shifts height between frames */
+  overflow: hidden;
+}
+
+.vexil-ascii-art {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--companion-hue, #d87756);
+  margin: 0;
+  padding: 0;
+  white-space: pre;
+  user-select: none;
+  text-shadow: 0 0 6px color-mix(in srgb, var(--companion-hue, #CC7D5E) 50%, transparent);
+  opacity: 0.92;
+  transition: opacity 0.1s;
+}
+
+/* Buddy bio — header row: art left, name right */
+.vexil-bio {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--companion-hue, #d87756) 35%, transparent);
+  flex-shrink: 0;
+}
+.vexil-bio.hidden { display: none; }
+.vexil-bio-name {
+  font-family: var(--font);
+  font-size: 11px;
+  color: var(--companion-hue, #d87756);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  text-align: right;
+}
+.vexil-bio-personality { display: none; }
+
+/* Reserve bottom clearance when companion bubble is visible so it doesn't overlap log text */
+#message-log.companion-active { padding-bottom: 180px; }
+
+/* ══════════════════════════════════════════
+   COMPANION — Vexil Memory Linter
+   Fixed bottom-right, appears on lint events
+   ══════════════════════════════════════════ */
+
+:root {
+  --companion-hue: #CC7D5E;  /* overwritten at runtime from buddy.json */
+}
+
+.companion-wrap {
+  position: fixed;
+  bottom: 68px;
+  left: 270px;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 8px;
+  z-index: 200;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.companion-wrap.hidden { opacity: 0; pointer-events: none; }
+.companion-wrap:not(.hidden) { opacity: 1; pointer-events: all; }
+
+.companion-sprite-wrap {
+  display: none;
+}
+
+.companion-sprite-canvas {
+  image-rendering: pixelated;
+  width: 48px;
+  height: 48px;
+  display: block;
+}
+
+.companion-bubble {
+  max-width: 280px;
+  background: #000;
+  border: 1px solid var(--companion-hue);
+  padding: 6px 10px;
+  font-family: var(--font);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text);
+  position: relative;
+  pointer-events: all;
+}
+
+.companion-bubble::after {
+  content: '';
+  position: absolute;
+  left: -6px;
+  bottom: 14px;
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-right: 6px solid var(--companion-hue);
+}
+
+.companion-bubble.hidden { visibility: hidden; opacity: 0; }
+.companion-bubble.blocked { border-color: #FF3333; }
+.companion-bubble.blocked::after { border-right-color: #FF3333; }
+.companion-bubble.ask { border-color: #FFCC00; }
+.companion-bubble.ask::after { border-right-color: #FFCC00; }
+.companion-bubble.warn { border-color: #666666; }
+.companion-bubble.warn::after { border-right-color: #666666; }
+.companion-bubble.vexil { border-color: #888888 !important; }
+.companion-bubble.vexil::after { border-right-color: #888888 !important; }
+
+.companion-bubble-msg { margin-bottom: 0; }
+
+.companion-bubble-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.companion-bubble-actions.hidden { display: none; }
+
+.companion-btn {
+  background: #000;
+  border: 1px solid var(--text-mute, #555);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 10px;
+  padding: 2px 8px;
+  cursor: pointer;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  transition: border-color 0.1s, color 0.1s;
+}
+
+.companion-btn:hover { border-color: var(--text); }
+.companion-approve:hover { border-color: #39FF14; color: #39FF14; }
+.companion-deny:hover    { border-color: #FF3333; color: #FF3333; }
+
+@media (prefers-reduced-motion: reduce) {
+  .companion-wrap { transition: none; }
+}
+
