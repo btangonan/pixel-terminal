@@ -327,8 +327,12 @@ export function initVoice() {
         _showDotStatus('Set voiceBridgePath in Settings');
         return;
       }
-      const bridgeCmd = `cd ${bridgePath} && source venv/bin/activate && python3 pixel_voice_bridge.py`;
-      Command.create('sh', ['-c', bridgeCmd]).execute().catch(() => {
+      // Validate path: reject shell metacharacters to prevent injection
+      if (/[;&|`$(){}[\]!#~]/.test(bridgePath)) {
+        _showDotStatus('Invalid bridge path');
+        return;
+      }
+      Command.create('sh', ['-c', `cd '${bridgePath.replace(/'/g, "'\\''")}' && source venv/bin/activate && python3 pixel_voice_bridge.py`]).execute().catch(() => {
         _showDotStatus('Could not start voice bridge');
       });
     }

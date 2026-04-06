@@ -166,6 +166,7 @@
   background: var(--companion-hue, #d87756);
   color: var(--bg, #000);
   border-width: 2px;
+  font-weight: bold;
 }
 .vexil-entry.has-send:hover .send-overlay { display: flex; }
 
