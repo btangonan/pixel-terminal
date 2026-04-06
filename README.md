@@ -31,10 +31,6 @@ Each project folder also gets its own familiar. An ASCII companion that animates
 <img src="graphics/02_gifs/00_git-ready/anima-demo2.gif" alt="Anima demo">
 </p>
 
-<p align="center">
-<img src="graphics/02_gifs/00_git-ready/anima_a.gif" alt="Sessions and companions">
-</p>
-
 ## Features
 
 - **One project, one companion.** Every project gets a unique familiar generated from a weighted rarity pool. Two developers on the same codebase won't get the same creature.
@@ -47,6 +43,10 @@ Each project folder also gets its own familiar. An ASCII companion that animates
 - **Native performance.** Tauri v2 + Rust backend. Actual macOS app, 4MB binary.
 
 ## How it looks
+
+<p align="center">
+<img src="graphics/02_gifs/00_git-ready/anima_a.gif" alt="Sessions and companions">
+</p>
 
 <p align="center">
 <img src="graphics/02_gifs/00_git-ready/anima_c-1.gif" alt="Watcher commentary">
