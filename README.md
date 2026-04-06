@@ -13,10 +13,10 @@
 
 <div align="center" style="margin-top: 25px;">
 
-[![Tauri v2](https://img.shields.io/badge/Tauri-v2-d87756?logo=tauri&style=for-the-badge)](https://tauri.app)
-[![macOS](https://img.shields.io/badge/macOS-13%2B-d87756?logo=apple&style=for-the-badge)](https://www.apple.com/macos/)
-[![license](https://img.shields.io/badge/license-MIT-d87756?style=for-the-badge)](LICENSE)
-[![version](https://img.shields.io/badge/version-0.1.0--alpha-d87756?style=for-the-badge)](https://github.com/btangonan/anima/releases)
+[![Tauri v2](https://img.shields.io/badge/Tauri-v2-d87756?logo=tauri&logoColor=white&style=for-the-badge&labelColor=000000)](https://tauri.app)
+[![macOS](https://img.shields.io/badge/macOS-13%2B-d87756?logo=apple&logoColor=white&style=for-the-badge&labelColor=000000)](https://www.apple.com/macos/)
+[![license](https://img.shields.io/badge/license-MIT-d87756?style=for-the-badge&labelColor=000000)](LICENSE)
+[![version](https://img.shields.io/badge/version-0.1.0--alpha-d87756?style=for-the-badge&labelColor=000000)](https://github.com/btangonan/anima/releases)
 
 </div>
 
