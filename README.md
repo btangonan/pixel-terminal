@@ -8,6 +8,7 @@
 
 <p align="center">
   <img src="graphics/02_gifs/00_git-ready/anima-session-familiars.gif" alt="ASCII familiars in session list" width="260">
+  <img src="graphics/02_gifs/00_git-ready/anima-session-familiars-cards.gif" alt="Familiar stat cards" width="420">
 </p>
 
 <div align="center" style="margin-top: 25px;">
@@ -51,10 +52,6 @@ Each project folder also gets its own familiar. An ASCII companion that animates
 ![Familiar cards and economy](graphics/02_gifs/00_git-ready/anima_b.gif)
 
 **Token spend means something.** Every 1000 tokens earns 1 nim. Nim funds re-rolls, new companions, cosmetics.
-
-![Familiar cards](graphics/02_gifs/00_git-ready/anima-session-familiars-cards.gif)
-
-**Every familiar gets a stat card.** Species, rarity, power ratings, session history.
 
 ![Watcher commentary](graphics/02_gifs/00_git-ready/anima_c-1.gif)
 
