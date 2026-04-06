@@ -28,7 +28,7 @@ Claude Code ships with a basic buddy. An ASCII creature that hatches in your ter
 Each project folder also gets its own familiar. An ASCII companion that animates while Claude is working, so you can see at a glance which sessions are done and waiting on you. Every 1,000 tokens earns 1 @nim@. Spend it to re-roll for a new species, rarity, and personality.
 
 <p align="center">
-<img src="graphics/02_gifs/00_git-ready/anima-demo.gif" alt="Anima demo">
+<img src="graphics/02_gifs/00_git-ready/anima-demo2.gif" alt="Anima demo">
 </p>
 
 <p align="center">
