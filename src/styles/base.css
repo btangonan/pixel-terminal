@@ -406,11 +406,13 @@ body.no-session-active #empty-state { display: block; }
 /* Sequential thinking indicator */
 .seq-think-label {
   font-family: var(--font);
-  font-size: var(--fs-sm);
-  color: var(--text-mid);
-  padding: 2px 0;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  font-weight: 300;
+  padding: 1px 0;
   line-height: var(--lh-tight);
-  letter-spacing: 0.5px;
+  letter-spacing: 0;
+  opacity: 0.7;
 }
 .seq-think-done {
   color: var(--text-mute);
