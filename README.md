@@ -1,15 +1,10 @@
 <h1 align="center">
-    <img src="graphics/00_logo/anima_wordmark_ascii.png" alt="Anima" width="400">
+    <img src="graphics/02_gifs/00_git-ready/anima_wordmark_sprites.gif" alt="Anima" width="600">
 </h1>
 
 <h2 align="center" style="padding-bottom: 20px;">
   Your Claude Buddy needs friends.
 </h2>
-
-<p align="center">
-  <img src="graphics/02_gifs/00_git-ready/anima-session-familiars.gif" alt="ASCII familiars in session list" width="260">
-  <img src="graphics/02_gifs/00_git-ready/anima-session-familiars-cards.gif" alt="Familiar stat cards" width="420">
-</p>
 
 <div align="center" style="margin-top: 25px;">
 
