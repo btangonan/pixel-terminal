@@ -25,11 +25,11 @@
 
 <br/>
 
-Claude Code ships with a basic buddy — an ASCII creature that hatches in your terminal, watches you work, and occasionally drops a line in a speech bubble. It's charming. It's also limited: the buddy can't see across sessions, can't remember what happened last time, its commentary comes from a small model working with a 5,000-character window, and the speech bubble text can't be copied or pasted back into your session.
+Claude Code ships with a basic buddy. An ASCII creature that hatches in your terminal, watches you work, and occasionally drops a line in a speech bubble. It's charming. It's also limited: the buddy can't see across sessions, can't remember what happened last time, its commentary comes from a small model working with a 5,000-character window, and the speech bubble text can't be copied or pasted back into your session.
 
-Anima turns your Claude buddy into an oracle — a cross-session code supervisor running the full Claude model, inside a native macOS app. It watches tool patterns across every active session, catches retry loops and read-heavy spirals before you've noticed them, and surfaces observations you can select and paste straight into the conversation.
+Anima turns your Claude buddy into an oracle. A cross-session code supervisor running the full Claude model, inside a native macOS app. It watches tool patterns across every active session, catches retry loops and read-heavy spirals before you've noticed them, and surfaces observations you can select and paste straight into the conversation.
 
-Each project folder also gets its own familiar — an ASCII companion that animates while Claude is working, so you can see at a glance which sessions are done and waiting on you. Every 1,000 tokens earns 1 nim — spend it to re-roll for a new species, rarity, and personality.
+Each project folder also gets its own familiar. An ASCII companion that animates while Claude is working, so you can see at a glance which sessions are done and waiting on you. Every 1,000 tokens earns 1 nim. Spend it to re-roll for a new species, rarity, and personality.
 
 ![Sessions and companions](graphics/02_gifs/00_git-ready/anima_a.gif)
 
@@ -37,32 +37,32 @@ Each project folder also gets its own familiar — an ASCII companion that anima
 
 ## Features
 
-- **One project, one companion** — every project gets a unique familiar generated from a weighted rarity pool. Two developers on the same codebase won't get the same creature.
-- **Nim token economy** — 1 nim per 1000 tokens spent. Spend on re-rolls and new characters. Progress, not anxiety.
-- **Collectible familiar cards** — each project gets a stat card: species, rarity, power ratings, session history. Like a Pokémon card for your codebase.
-- **Cross-session watcher** — Rust daemon monitors all active Claude sessions simultaneously. Catches retry loops and read-heavy spirals in real time.
-- **Oracle commentary** — companion fires contextual observations in a speech bubble. Selectable text — copy and paste into the session.
-- **Voice input** — Bluetooth mic + push-to-talk. Hands-free Claude via WebSocket bridge.
-- **Session history** — full session browser. Replay any past conversation. JSONL-backed.
-- **Native performance** — Tauri v2 + Rust backend. Not Electron. Actual macOS app.
+- **One project, one companion.** Every project gets a unique familiar generated from a weighted rarity pool. Two developers on the same codebase won't get the same creature.
+- **Nim token economy.** 1 nim per 1000 tokens spent. Spend on re-rolls and new characters.
+- **Collectible familiar cards.** Each project gets a stat card: species, rarity, power ratings, session history.
+- **Cross-session watcher.** Rust daemon monitors all active Claude sessions simultaneously. Catches retry loops and read-heavy spirals in real time.
+- **Oracle commentary.** Companion fires contextual observations in a speech bubble. Selectable text you can paste straight into the session.
+- **Voice input.** Bluetooth mic + push-to-talk. Hands-free Claude via WebSocket bridge.
+- **Session history.** Full session browser. Replay any past conversation. JSONL-backed.
+- **Native performance.** Tauri v2 + Rust backend. Actual macOS app, 4MB binary.
 
 ## How it looks
 
 ![Familiar cards and economy](graphics/02_gifs/00_git-ready/anima_b.gif)
 
-**Token spend means something.** Every 1000 tokens earns 1 nim. Nim funds re-rolls, new companions, cosmetics. Not a limit to dread. A counter to fill.
+**Token spend means something.** Every 1000 tokens earns 1 nim. Nim funds re-rolls, new companions, cosmetics.
 
 ![Familiar cards](graphics/02_gifs/00_git-ready/anima-session-familiars-cards.gif)
 
-**Every familiar gets a stat card.** Species, rarity, power ratings, session history — like a trading card for your codebase.
+**Every familiar gets a stat card.** Species, rarity, power ratings, session history.
 
 ![Watcher commentary](graphics/02_gifs/00_git-ready/anima_c-1.gif)
 
-**You're not working alone.** The watcher daemon tracks tool patterns across all active sessions. When it catches you going in circles, the companion says something. It's not *I'm stuck*. It's *we're stuck*.
+**The watcher sees what you miss.** The daemon tracks tool patterns across all active sessions. When it catches you going in circles, the companion says something.
 
 ![Multi-session workflow](graphics/02_gifs/00_git-ready/anima_d.gif)
 
-*Commentary runs as short background prompts via the Claude CLI — capped at 2 concurrent calls. All processing is local; nothing leaves your machine except the API calls you'd make anyway.*
+*Commentary runs as short background prompts via the Claude CLI, capped at 2 concurrent calls. All processing is local; nothing leaves your machine except the API calls you'd make anyway.*
 
 <div align="center">
 <img src="graphics/01_ui/anima_stat-card.png" alt="Familiar stat card" width="420">
@@ -107,9 +107,9 @@ cd src-tauri && cargo test
 
 ## How It Works
 
-Anima is a Tauri v2 desktop app. The frontend is vanilla JS — no framework, no bundler. The Rust backend handles file I/O, path security, companion sync, and the cross-session watcher. A WebSocket bridge handles voice input.
+Anima is a Tauri v2 desktop app. The frontend is vanilla JS, no framework, no bundler. The Rust backend handles file I/O, path security, companion sync, and the cross-session watcher. A WebSocket bridge handles voice input.
 
-The watcher (`daemon.rs`) is a Tokio async loop that polls Claude Code's session feed, tracks tool sequences across all active sessions, and emits companion commentary via Tauri events when patterns fire. The oracle — the voice behind the companion bubble — is a `claude -p` subprocess with personality context injected from your companion's species and stats.
+The watcher (`daemon.rs`) is a Tokio async loop that polls Claude Code's session feed, tracks tool sequences across all active sessions, and emits companion commentary via Tauri events when patterns fire. The oracle (the voice behind the companion bubble) is a `claude -p` subprocess with personality context injected from your companion's species and stats.
 
 Full architecture notes: [`docs/architecture.md`](docs/architecture.md)
 
