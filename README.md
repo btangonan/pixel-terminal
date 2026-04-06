@@ -32,9 +32,13 @@ Anima turns your Claude buddy into an oracle. A cross-session code supervisor ru
 
 Each project folder also gets its own familiar. An ASCII companion that animates while Claude is working, so you can see at a glance which sessions are done and waiting on you. Every 1,000 tokens earns 1 nim. Spend it to re-roll for a new species, rarity, and personality.
 
-![Sessions and companions](graphics/02_gifs/00_git-ready/anima_a.gif)
+<p align="center">
+<img src="graphics/02_gifs/00_git-ready/anima_a.gif" alt="Sessions and companions">
+</p>
 
-![Anima demo](graphics/02_gifs/00_git-ready/anima-demo.gif)
+<p align="center">
+<img src="graphics/02_gifs/00_git-ready/anima-demo.gif" alt="Anima demo">
+</p>
 
 ## Features
 
@@ -49,22 +53,22 @@ Each project folder also gets its own familiar. An ASCII companion that animates
 
 ## How it looks
 
-![Familiar cards and economy](graphics/02_gifs/00_git-ready/anima_b.gif)
-
-**Token spend means something.** Every 1000 tokens earns 1 nim. Nim funds re-rolls, new companions, cosmetics.
-
-![Watcher commentary](graphics/02_gifs/00_git-ready/anima_c-1.gif)
+<p align="center">
+<img src="graphics/02_gifs/00_git-ready/anima_c-1.gif" alt="Watcher commentary">
+</p>
 
 **The watcher sees what you miss.** The daemon tracks tool patterns across all active sessions. When it catches you going in circles, the companion says something.
 
-![Multi-session workflow](graphics/02_gifs/00_git-ready/anima_d.gif)
+<p align="center">
+<img src="graphics/02_gifs/00_git-ready/anima_d.gif" alt="Multi-session workflow">
+</p>
 
 *Commentary runs as short background prompts via the Claude CLI, capped at 2 concurrent calls. All processing is local; nothing leaves your machine except the API calls you'd make anyway.*
 
-<div align="center">
+<p align="center">
 <img src="graphics/01_ui/anima_stat-card.png" alt="Familiar stat card" width="420">
 <img src="graphics/01_ui/anima_oracle-chat.png" alt="Oracle commentary" width="280">
-</div>
+</p>
 
 ## Requirements
 
