@@ -21,7 +21,13 @@
 
 <br/>
 
-Anima is a native macOS app that wraps the Claude Code CLI and gives every session a set of Claude buddies. They watch your work, fire commentary when something's off, and persist across sessions so your projects feel less like ephemeral processes and more like a place where things live.
+Claude Code ships with a basic buddy — an ASCII creature that hatches in your terminal, watches you work, and occasionally drops a line in a speech bubble. It's charming. It's also limited: the buddy can't see across sessions, can't remember what happened last time, its commentary comes from a small model working with a 5,000-character window, and the speech bubble text can't be copied or pasted back into your session.
+
+Anima turns your Claude buddy into an oracle — a cross-session code supervisor running the full Claude model, inside a native macOS app. It watches tool patterns across every active session, catches retry loops and read-heavy spirals before you've noticed them, and surfaces observations you can select and paste straight into the conversation.
+
+Each project folder also gets its own familiar — an ASCII companion that animates while Claude is working, so you can see at a glance which sessions are done and waiting on you. Every 1,000 tokens earns 1 nim — spend it to re-roll for a new species, rarity, and personality.
+
+The name comes from animism. Not sacred. Just alive.
 
 ![Anima demo](graphics/02_gifs/00_git-ready/anima-demo.gif)
 
