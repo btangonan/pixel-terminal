@@ -40,3 +40,4 @@ docs/transcripts/
 scripts/INSTALL-PLAN.md
 scripts/__pycache__/
 *.pyc
+*.psd

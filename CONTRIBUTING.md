@@ -1,4 +1,4 @@
-# Contributing to pixel-terminal
+# Contributing to Anima
 
 Solo project. These conventions exist to keep the history readable and PRs reviewable.
 

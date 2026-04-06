@@ -10,13 +10,13 @@
 
 [![Tauri v2](https://img.shields.io/badge/Tauri-v2-FFC131?logo=tauri&style=flat)](https://tauri.app)
 [![macOS](https://img.shields.io/badge/macOS-13%2B-000000?logo=apple&style=flat)](https://www.apple.com/macos/)
-[![license](https://img.shields.io/github/license/btangonan/pixel-terminal?color=0183ff&style=flat)](LICENSE)
-[![version](https://img.shields.io/badge/version-0.1.0--alpha-orange?style=flat)](https://github.com/btangonan/pixel-terminal/releases)
+[![license](https://img.shields.io/github/license/btangonan/anima?color=0183ff&style=flat)](LICENSE)
+[![version](https://img.shields.io/badge/version-0.1.0--alpha-orange?style=flat)](https://github.com/btangonan/anima/releases)
 
 </div>
 
 <div align="center">
-<a href="https://github.com/btangonan/pixel-terminal/releases">📦 Releases</a> • <a href="https://github.com/btangonan/pixel-terminal/discussions">💬 Discussions</a> • <a href="https://github.com/btangonan/pixel-terminal/issues">🐛 Issues</a> • <a href="CONTRIBUTING.md">🤝 Contributing</a>
+<a href="https://github.com/btangonan/anima/releases">📦 Releases</a> • <a href="https://github.com/btangonan/anima/discussions">💬 Discussions</a> • <a href="https://github.com/btangonan/anima/issues">🐛 Issues</a> • <a href="CONTRIBUTING.md">🤝 Contributing</a>
 </div>
 
 <br/>
@@ -37,10 +37,6 @@ The name comes from animism. Inhabited spaces teem with activity. Not sacred. Ju
 - **Voice input** — Bluetooth mic + push-to-talk. Hands-free Claude via WebSocket bridge.
 - **Session history** — full session browser. Replay any past conversation. JSONL-backed.
 - **Native performance** — Tauri v2 + Rust backend. Not Electron. Actual macOS app.
-
-<p align="center">
-  <img src="graphics/01_ui/anima_session-cards.png" alt="Session list with pixel companions" width="280">
-</p>
 
 ## How it looks
 
@@ -73,7 +69,7 @@ The name comes from animism. Inhabited spaces teem with activity. Not sacred. Ju
 
 ## Getting Started
 
-1. Download `Anima.dmg` from [Releases](https://github.com/btangonan/pixel-terminal/releases)
+1. Download `Anima.dmg` from [Releases](https://github.com/btangonan/anima/releases)
 2. Open the app
 3. Point it at a project directory and start a session
 
@@ -82,8 +78,8 @@ The companion generates on first session. Nim accrues automatically.
 ### Build from source
 
 ```bash
-git clone https://github.com/btangonan/pixel-terminal
-cd pixel-terminal
+git clone https://github.com/btangonan/anima
+cd anima
 npm install
 npm run tauri dev
 ```
