@@ -1,5 +1,5 @@
 <h1 align="center">
-    <img src="graphics/02_gifs/00_git-ready/anima_wordmark_sprites3.gif" alt="Anima" width="600">
+    <img src="graphics/02_gifs/00_git-ready/anima_wordmark_sprites4.gif" alt="Anima" width="900">
 </h1>
 
 <h2 align="center" style="padding-bottom: 20px;">
