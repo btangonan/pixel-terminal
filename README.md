@@ -3,7 +3,7 @@
 </h1>
 
 <h2 align="center" style="padding-bottom: 20px;">
-  Your Claude Buddy needs friends.
+  A 4MB native Claude Code client with extra Buddies.
 </h2>
 
 <div align="center" style="margin-top: 25px;">
@@ -30,6 +30,18 @@ Each project folder also gets its own familiar. An ASCII companion that animates
 <p align="center">
 <img src="graphics/02_gifs/00_git-ready/anima-demo2.gif" alt="Anima demo">
 </p>
+
+## What Anima does that the terminal doesn't
+
+Anima spawns Claude Code as a subprocess, pipes stream-json, renders messages in its own UI, and manages sessions. It's not watching Claude from the outside. It is the interface.
+
+1. **Multi-session dashboard.** All your Claude Code sessions in one window. See at a glance which are working, which are done, and which are waiting on you.
+2. **Cross-session watcher.** A Rust daemon monitors tool patterns across all sessions. Catches retry loops and read-heavy spirals before you've noticed them.
+3. **Persistent companions.** Every project gets its own ASCII creature with species, rarity, and stats. Token usage earns nim currency for re-rolls. Same project always rolls the same buddy.
+4. **Oracle commentary.** Your companion's observations run through the full Claude model, not the small one /buddy uses. The text is selectable so you can paste it straight back into your session.
+5. **Session history.** Replay past conversations without digging through JSONL files.
+6. **Voice input.** Bluetooth mic and push-to-talk via WebSocket bridge.
+7. **Model and effort overrides.** Switch models and effort levels per session from the UI.
 
 ## Features
 
