@@ -8,7 +8,7 @@ import {
   syncOmiSessions, getFamiliarRerollCount,
 } from './session.js';
 import { getBuddyTrigger, addToVexilLog } from './companion.js';
-import { getStagedAttachments, markAttachmentsSent, cleanupSession as cleanupAttachments } from './attachments.js';
+import { getStagedAttachments, markAttachmentsSent, cleanupSession as cleanupAttachments, initSession as initAttachmentSession } from './attachments.js';
 import { getSlashCommands, isBuiltinCommand, loadSlashCommands } from './slash-menu.js';
 import { pxLog } from './logger.js';
 
@@ -75,6 +75,7 @@ function createSession(cwd, opts = {}) {
     _taskLedger: { userPrompt: '', tools: [], lastText: '' },
   };
   sessions.set(id, session);
+  initAttachmentSession(id);
 
   _deps.renderSessionCard(id);
   _deps.setActiveSession(id);
@@ -95,7 +96,7 @@ async function spawnClaude(id) {
   const s = sessions.get(id);
   if (!s) return;
   // Refresh slash commands from disk — picks up new commands added since startup
-  loadSlashCommands().catch(() => {});
+  loadSlashCommands().catch(e => pxLog('WARN', 'slash cmd load: ' + e));
   pxLog('SPAWN', `id:${id.slice(0,8)} cwd:${s.cwd} model:${s._modelOverride||'default'} effort:${s._effortOverride||'default'} continue:${!!s._interrupted}`);
   try {
     // v0.1: bypassPermissions — no MCP gate needed, works on any machine.
@@ -128,7 +129,7 @@ async function spawnClaude(id) {
       _buf = lines.pop();
       for (const line of lines) {
         if (!line.trim()) continue;
-        try { _deps.handleEvent(id, JSON.parse(line)); } catch (_) {}
+        try { _deps.handleEvent(id, JSON.parse(line)); } catch (e) { pxLog('WARN', `stdout parse: ${e?.message ?? e}`); }
       }
     });
 
@@ -357,7 +358,7 @@ async function sendMessageDirect(id, text) {
   s._lastUserMsg = text;
   _deps.setStatus(id, 'working');
   const line = JSON.stringify({ type: 'user', message: { role: 'user', content: text } }) + '\n';
-  try { await s.child.write(line); } catch (_) { _deps.setStatus(id, 'idle'); }
+  try { await s.child.write(line); } catch (e) { pxLog('WARN', `child write failed: ${e}`); _deps.setStatus(id, 'idle'); }
 }
 
 async function sendMessage(id, text) {

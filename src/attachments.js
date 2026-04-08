@@ -35,6 +35,10 @@ const store = new Map();
 
 let _getActiveSessionId = null;
 
+export function initSession(sessionId) {
+  if (!store.has(sessionId)) store.set(sessionId, []);
+}
+
 export function initAttachments({ getActiveSessionId }) {
   _getActiveSessionId = getActiveSessionId;
   wireDragDrop();   // async, fire-and-forget — listeners register in <5ms
