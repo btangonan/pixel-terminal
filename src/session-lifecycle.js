@@ -16,6 +16,14 @@ const { Command } = window.__TAURI__.shell;
 const { open: openDialog } = window.__TAURI__.dialog;
 const { invoke } = window.__TAURI__.core;
 
+// ── Task ledger: writes rolling task state to disk so hooks can read it ──
+// PreCompact hook snapshots this; PostCompact hook injects it as recovery context.
+// Uses Tauri's write_file_as_text command (creates parent dirs, handles ~ expansion).
+function writeTaskLedger(sessionId, ledger) {
+  const path = `~/.local/share/pixel-terminal/sessions/${sessionId}/task_ledger.json`;
+  invoke('write_file_as_text', { path, content: JSON.stringify(ledger) }).catch(() => {});
+}
+
 // Forward declarations — set by app.js bootstrap to break circular deps
 let _deps = {
   renderSessionCard: null,
@@ -64,6 +72,7 @@ function createSession(cwd, opts = {}) {
     _turnStart: null,     // timestamp when message sent to stdin
     _ttft: null,          // time to first token (ms)
     lastActivityAt: Date.now(),  // updated on tool_any + sendMessage; drives idle badge
+    _taskLedger: { userPrompt: '', tools: [], lastText: '' },
   };
   sessions.set(id, session);
 
@@ -96,8 +105,15 @@ async function spawnClaude(id) {
       '--input-format',  'stream-json',
       '--output-format', 'stream-json',
       '--verbose',
+      '--include-hook-events',
       '--permission-mode', 'bypassPermissions',
     ];
+    // Inject compaction-resilience guidance (helps Claude recover after context compression)
+    // TODO: bundle as Tauri resource for distribution (currently uses home dir path)
+    let home = await window.__TAURI__.path.homeDir();
+    if (!home.endsWith('/')) home += '/';
+    const guidancePath = `${home}Projects/pixel-terminal/src/anima-system-guidance.txt`;
+    claudeArgs.push('--append-system-prompt-file', guidancePath);
     if (s._interrupted) { claudeArgs.push('--continue'); s._interrupted = false; }
     if (s.readOnly) claudeArgs.push('--disallowed-tools', 'Edit,Write,MultiEdit,NotebookEdit,Bash');
     if (s._modelOverride) claudeArgs.push('--model', s._modelOverride);
@@ -225,7 +241,19 @@ const BUILTIN_COMMANDS = {
     if (log) log.querySelectorAll('.msg').forEach(m => m.remove());
     const sl = sessionLogs.get(id);
     if (sl) sl.messages = [];
-    s._manualClose = true;
+    // Reset compaction state — new process starts fresh
+    s._contextTokens = 0;
+    s._contextBaseline = null;
+    s._authoritativePct = null;
+    s._prevContextTokens = null;
+    s._compactionWarned = false;
+    s._compactionDetected = false;
+    s.tokens = 0;
+    s._liveTokens = 0;
+    // Repaint card immediately so context meter resets to 0%
+    if (_deps.updateSessionCard) _deps.updateSessionCard(id);
+    // Use _interrupting so close handler suppresses ERR status
+    s._interrupting = true;
     if (s.child) { try { s.child.kill(); } catch (_) {} s.child = null; }
     spawnClaude(id);
     _deps.pushMessage(id, { type: 'system-msg', text: 'Session cleared.' });
@@ -362,6 +390,9 @@ async function sendMessage(id, text) {
   const expanded = await expandSlashCommand(raw);
   pxLog('MSG→', `id:${id.slice(0,8)} "${raw.slice(0, 80)}${raw.length > 80 ? '…' : ''}"`);
   s._lastUserMsg = raw;  // captured for vexil routing in events.js
+  // Task ledger: capture user prompt for compaction recovery
+  s._taskLedger.userPrompt = raw.slice(0, 500);
+  writeTaskLedger(id, s._taskLedger);
   const trigger = getBuddyTrigger();           // e.g. "vexil "
   const triggerName = trigger.trim();           // e.g. "vexil"
   // Escape any regex special chars in buddy name (e.g. "Mr. Robot", "C++")
@@ -531,4 +562,4 @@ async function pickFolder() {
   }
 }
 
-export { createSession, spawnClaude, killSession, interruptSession, sendMessage, expandSlashCommand, warnIfUnknownCommand, pickFolder };
+export { createSession, spawnClaude, killSession, interruptSession, sendMessage, expandSlashCommand, warnIfUnknownCommand, pickFolder, writeTaskLedger };

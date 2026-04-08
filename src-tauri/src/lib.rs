@@ -41,7 +41,7 @@ pub fn run() {
                 &PredefinedMenuItem::hide_others(app, None)?,
                 &PredefinedMenuItem::show_all(app, None)?,
                 &PredefinedMenuItem::separator(app)?,
-                &PredefinedMenuItem::quit(app, None)?,
+                &MenuItem::with_id(app, "quit", "Quit Anima", true, Some("CmdOrCtrl+Q"))?,
             ])?;
             let edit_menu = Submenu::with_items(app, "Edit", true, &[
                 &PredefinedMenuItem::undo(app, None)?,
@@ -64,6 +64,12 @@ pub fn run() {
                 if event.id() == "about" {
                     if let Some(win) = app.get_webview_window("main") {
                         let _ = win.emit("show-about", ());
+                    }
+                }
+                if event.id() == "quit" {
+                    // Route through window close so frontend can show confirmation dialog
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.close();
                     }
                 }
             });

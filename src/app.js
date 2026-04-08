@@ -30,6 +30,7 @@ import { initCompanion } from './companion.js';
 // ── Wire cross-module deps ────────────────────────────────
 setLifecycleDeps({
   renderSessionCard,
+  updateSessionCard,
   setActiveSession,
   pushMessage,
   setStatus,

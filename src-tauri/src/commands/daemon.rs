@@ -26,13 +26,13 @@ use tokio::time::sleep;
 
 const POLL_MS:               u64 = 400;
 const COOLDOWN_S:            f64 = 8.0;
-const RATE_LIMIT_BACKOFF_S:  f64 = 15.0;  // suppress commentary after user hits rate limit
+const RATE_LIMIT_BACKOFF_S:  f64 = 30.0;  // suppress commentary after user hits rate limit
 const TURN_COOLDOWN_S:       f64 = 4.0;
 const TOKEN_BLOAT_THRESHOLD: u64 = 80_000;
 const FIRED_PATTERN_TTL_S:   f64 = 300.0;
 const ACTIVITY_TRIGGER_CNT:  u32 = 2;
 const ACTIVITY_RECENCY_S:    f64 = 90.0;
-const MID_TURN_TOOL_CNT:     u32 = 2;   // comment mid-turn after N tool_use events per tick
+const MID_TURN_TOOL_CNT:     u32 = 4;   // comment mid-turn after N tool_use events per tick
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -60,6 +60,9 @@ pub struct DaemonState {
     pub(crate) recent_actions:  VecDeque<String>,
     pub(crate) recent_commentary: VecDeque<(f64, String)>, // (ts, msg) — shared with oracle chat
     pub(crate) last_rate_limit_ts: f64,  // when user last hit rate limit — suppress commentary
+    // Streaming guard: suppress commentary while user sessions are actively streaming
+    pub(crate) active_sessions: HashMap<String, f64>,  // session_id → last_tool_use_ts
+    pub(crate) last_idle_ts: f64,                       // when active_sessions last became empty
     // Feed reader state
     pub(crate) feed_offset: u64,
     pub(crate) feed_inode:  u64,
@@ -138,10 +141,13 @@ pub(crate) fn coalesce<'a>(a: &'a str, b: &'a str, default: &'a str) -> &'a str 
     if !a.is_empty() { a } else if !b.is_empty() { b } else { default }
 }
 
-/// Extract trait line + fallback personality from buddy.json fields.
+/// Extract trait line + fallback personality + ethology from buddy.json fields.
 /// Both build_persona() (proactive) and build_oracle_system() (direct) use this
 /// so every companion path gets the same character flavor.
-pub(crate) fn buddy_traits(buddy: &Value) -> (String, String) {
+///
+/// Returns: (trait_line, fallback_personality, ethology)
+/// ethology is empty string if species has no archetype defined.
+pub(crate) fn buddy_traits(buddy: &Value) -> (String, String, String) {
     let species = str_val(buddy, "species");
     let voice   = str_val(buddy, "voice");
     let peak    = buddy.get("stats").and_then(|s| s.as_object()).and_then(|m| {
@@ -165,7 +171,12 @@ pub(crate) fn buddy_traits(buddy: &Value) -> (String, String) {
     }
     fallback.push_str(". Cuts to what's wrong, not what's happening. Opinionated and specific.");
 
-    (trait_line, fallback)
+    // Species ethology — behavioral archetype that shapes cadence and actions
+    let ethology = super::ethology::ethology(species)
+        .unwrap_or("")
+        .to_string();
+
+    (trait_line, fallback, ethology)
 }
 
 // ── I/O ───────────────────────────────────────────────────────────────────────
@@ -291,6 +302,11 @@ pub async fn daemon_loop(shared: Arc<DaemonShared>) {
         });
     }
 
+    // tc_batch lives outside the loop so unprocessed turn_complete events
+    // persist across ticks (streaming guard / cooldown / busy can defer them).
+    let mut tc_batch: HashMap<String, (f64, Value)> = HashMap::new();
+    const TC_BATCH_TTL_S: f64 = 60.0; // expire unprocessed turn_completes after 60s
+
     loop {
         sleep(Duration::from_millis(POLL_MS)).await;
 
@@ -306,11 +322,14 @@ pub async fn daemon_loop(shared: Arc<DaemonShared>) {
             st.feed_inode  = new_inode;
         }
 
-        if new_entries.is_empty() { continue; }
+        let now = now_s();
+
+        // Expire stale turn_complete events
+        tc_batch.retain(|_, (ts, _)| now - *ts < TC_BATCH_TTL_S);
+
+        if new_entries.is_empty() && tc_batch.is_empty() { continue; }
 
         // ── Process events (always runs — never gated by commentary_busy) ────
-        let now = now_s();
-        let mut tc_batch: HashMap<String, Value> = HashMap::new();
         let mut tool_sids: HashSet<String>       = HashSet::new();
         let mut tools_this_tick: u32 = 0;  // mid-turn tool_use count for alacrity
 
@@ -340,12 +359,16 @@ pub async fn daemon_loop(shared: Arc<DaemonShared>) {
                         if classify_tool(&tool) == "write" {
                             st.fired_patterns.remove(&format!("{sid}:read_heavy"));
                         }
-                        tool_sids.insert(sid);
+                        tool_sids.insert(sid.clone());
                         tools_this_tick += 1;
+                        // Streaming guard: mark session as actively streaming
+                        st.active_sessions.insert(sid, now);
                     }
                     "turn_complete" => {
+                        // Streaming guard: session finished streaming
+                        st.active_sessions.remove(&sid);
                         if entry["tool_count"].as_u64().unwrap_or(0) > 0 {
-                            tc_batch.insert(sid.clone(), entry.clone());
+                            tc_batch.insert(sid.clone(), (now, entry.clone()));
                         }
                         let um = entry["user_msg"].as_str().unwrap_or("").to_string();
                         let tt = entry["turn_text"].as_str().unwrap_or("").to_string();
@@ -388,6 +411,27 @@ pub async fn daemon_loop(shared: Arc<DaemonShared>) {
         }
 
         if !claude_ok { continue; }
+
+        // ── Streaming guard: yield to active user sessions ──────────────────
+        // Commentary never competes with user sessions for API budget.
+        {
+            let mut st = shared.state.lock().unwrap_or_else(|e| e.into_inner());
+            // TTL cleanup: remove sessions not seen for 120s (crash/disconnect safety)
+            st.active_sessions.retain(|_, ts| now - *ts < 120.0);
+            if st.active_sessions.is_empty() {
+                if st.last_idle_ts == 0.0 { st.last_idle_ts = now; }
+            } else {
+                st.last_idle_ts = 0.0;
+            }
+        }
+        let (any_active, idle_elapsed) = {
+            let st = shared.state.lock().unwrap_or_else(|e| e.into_inner());
+            (!st.active_sessions.is_empty(),
+             if st.last_idle_ts > 0.0 { now - st.last_idle_ts } else { 0.0 })
+        };
+        // Skip ALL commentary while sessions are streaming or within 3s of going idle
+        if any_active || (idle_elapsed > 0.0 && idle_elapsed < 3.0) { continue; }
+
         // commentary_busy only gates commentary spawns below — never skips event processing above
         let busy = shared.commentary_busy.load(Ordering::Relaxed);
 
@@ -451,7 +495,8 @@ pub async fn daemon_loop(shared: Arc<DaemonShared>) {
         if (now - last_rl) < RATE_LIMIT_BACKOFF_S { continue; }
 
         // ── Turn-complete commentary (per-session cooldown) ──────────────────
-        for (tc_sid, tc_entry) in &tc_batch {
+        let mut tc_fired_sid: Option<String> = None;
+        for (tc_sid, (_queued_ts, tc_entry)) in &tc_batch {
             let since = {
                 let st = shared.state.lock().unwrap_or_else(|e| e.into_inner());
                 now - st.last_comment_per.get(tc_sid).copied().unwrap_or(0.0)
@@ -488,8 +533,11 @@ pub async fn daemon_loop(shared: Arc<DaemonShared>) {
             shared.commentary_busy.store(true, Ordering::Relaxed);
             let sh = shared.clone();
             tokio::spawn(commentary_worker("turn_complete".into(), data, persona, sh));
+            tc_fired_sid = Some(tc_sid.clone());
             break;
         }
+        // Remove processed entry; unprocessed entries persist for next tick
+        if let Some(sid) = tc_fired_sid { tc_batch.remove(&sid); }
         if shared.commentary_busy.load(Ordering::Relaxed) { continue; }
 
         // ── Pattern triggers ─────────────────────────────────────────────────
