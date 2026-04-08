@@ -216,7 +216,7 @@ pub async fn load_session_history(file_path: String) -> Result<Vec<SessionHistor
         let reader = BufReader::new(file);
         let mut messages: Vec<SessionHistoryMessage> = Vec::new();
 
-        for line in reader.lines().flatten() {
+        for line in reader.lines().map_while(Result::ok) {
             let obj: serde_json::Value = match serde_json::from_str(&line) {
                 Ok(v) => v,
                 Err(_) => continue,
