@@ -16,8 +16,13 @@
   width: 78px;
   max-width: 78px;
   height: 54px; /* 5 lines × 10.8px — breathing room so tall sprites don't feel crammed */
-  overflow: hidden;
   position: relative; /* anchor for oracle-view-btn */
+}
+
+/* Sway animation when oracle is processing a query */
+#vexil-ascii.thinking .vexil-ascii-art {
+  animation: oracle-sway 1.6s linear infinite;
+  will-change: transform;
 }
 
 .vexil-ascii-art {

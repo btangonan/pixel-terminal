@@ -640,6 +640,14 @@ export async function initCompanion() {
   setInterval(pollOpsReport, 5000);   // ops report slower — less frequent events
   setInterval(pollMasterOut, 800);    // master proactive commentary — fast pickup for alacrity
 
+  // Oracle thinking sway — toggle class on sidebar sprite when oracle is in-flight
+  document.addEventListener('oracle:thinking', () => {
+    document.getElementById('vexil-ascii')?.classList.add('thinking');
+  });
+  document.addEventListener('oracle:idle', () => {
+    document.getElementById('vexil-ascii')?.classList.remove('thinking');
+  });
+
   document.dispatchEvent(new CustomEvent('pixel:companion-ready', { detail: { name: buddy?.name } }));
 }
 
