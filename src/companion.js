@@ -174,15 +174,14 @@ function _oracleThinkTick() {
 
 function _startOracleThink() {
   if (_oracleThinkTimer) return;
-  // Fade text out so sprite has the full bio row as runway
-  const bioTextEl = document.querySelector('.vexil-bio-text');
-  if (bioTextEl) { bioTextEl.style.transition = 'opacity 0.15s'; bioTextEl.style.opacity = '0'; }
-  // Measure full runway: bio row width minus sprite width and right margin
-  const bioEl = document.getElementById('vexil-bio');
-  if (bioEl && _asciiPre) {
-    const bioW = bioEl.getBoundingClientRect().width;
-    const preW = _asciiPre.getBoundingClientRect().width || 65;
-    _thinkMaxX = Math.max(16, Math.floor(bioW - preW - 8));
+  // Runway: left edge of #vexil-ascii to 6px before .vexil-bio-text starts, minus sprite width
+  const asciiEl = document.getElementById('vexil-ascii');
+  const textEl  = document.querySelector('.vexil-bio-text');
+  if (asciiEl && textEl && _asciiPre) {
+    const asciiRect = asciiEl.getBoundingClientRect();
+    const textRect  = textEl.getBoundingClientRect();
+    const preW      = _asciiPre.getBoundingClientRect().width || 65;
+    _thinkMaxX = Math.max(8, Math.floor(textRect.left - asciiRect.left - preW - 6));
   }
   // Hand off frame control — pause fidget and blink cycles
   clearTimeout(_asciiAnimTimer);
@@ -198,9 +197,6 @@ function _stopOracleThink() {
   clearInterval(_oracleThinkTimer);
   _oracleThinkTimer = null;
   if (_asciiPre) _asciiPre.style.transform = '';
-  // Fade text back in
-  const bioTextEl = document.querySelector('.vexil-bio-text');
-  if (bioTextEl) { bioTextEl.style.opacity = '1'; }
   // Resume normal idle animation
   scheduleNextFidget();
   scheduleNextBlink();
