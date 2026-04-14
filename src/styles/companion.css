@@ -12,14 +12,16 @@
 #vexil-ascii {
   display: flex;
   align-items: flex-end;
-  flex-shrink: 0;
+  flex: 0 0 82px;      /* fixed 82px — sprites are 12 chars × 6px = 72px + breathing room */
+  width: 82px;
+  max-width: 82px;
   height: 60px; /* 5 lines × 12px — fixed so bio row never shifts height between frames */
   overflow: hidden;
   position: relative; /* anchor for oracle-view-btn */
 }
 
 .vexil-ascii-art {
-  font-family: var(--font-mono);
+  font-family: var(--font); /* ui-monospace/SF Mono — consistent 6px/char at 10px, avoids Courier drift */
   font-size: 10px;
   line-height: 1.2;
   color: var(--companion-hue, #d87756);
