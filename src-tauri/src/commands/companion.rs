@@ -287,7 +287,92 @@ pub fn derive_voice(stats: &HashMap<String, i32>) -> &'static str {
     "default"
 }
 
-// ── Tauri command ─────────────────────────────────────────────────────────────
+// ── Salt generator (no external deps) ────────────────────────────────────────
+// Uses fmix64 bit-mixing on nanosecond timestamp for good entropy distribution.
+
+fn generate_salt() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+    let a = nanos ^ (nanos >> 33);
+    let b = a.wrapping_mul(0xff51_afd7_ed55_8ccd_u64);
+    let c = b ^ (b >> 33);
+    let d = c.wrapping_mul(0xc4ce_b9fe_1a85_ec53_u64);
+    let e = d ^ (d >> 33);
+    format!("{:015x}", e & 0x0fff_ffff_ffff_ffff_u64)
+}
+
+// ── Shared roll+write logic ───────────────────────────────────────────────────
+// Rolls bones with the given salt and soul, writes buddy.json atomically,
+// returns the full buddy JSON. Preserves manual fields (ttsEnabled, etc.)
+// that live in buddy.json but are not owned by sync.
+
+fn write_buddy_bones(
+    home: &str,
+    uuid: &str,
+    salt: &str,
+    soul: &Value,
+    hatched_at: i64,
+) -> Result<Value, String> {
+    let buddy_path = PathBuf::from(home).join(".config/pixel-terminal/buddy.json");
+
+    let bones = roll_bones_with_salt(uuid, salt);
+    let voice = derive_voice(&bones.stats);
+    let hue   = species_hue(&bones.species).to_string();
+
+    // Load existing buddy.json to preserve manual fields (ttsEnabled, ttsVoice, etc.)
+    let mut updated: Value = if buddy_path.exists() {
+        fs::read_to_string(&buddy_path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or(Value::Object(Default::default()))
+    } else {
+        Value::Object(Default::default())
+    };
+
+    let obj = updated.as_object_mut().ok_or("buddy.json is not a JSON object")?;
+
+    // Soul fields from claude.json — personality is LLM-generated and precious.
+    if let Some(name) = soul.get("name").and_then(|v| v.as_str()) {
+        obj.insert("name".to_string(), Value::String(name.to_string()));
+    } else if !obj.contains_key("name") {
+        obj.insert("name".to_string(), Value::String("Buddy".to_string()));
+    }
+    if let Some(personality) = soul.get("personality").and_then(|v| v.as_str()) {
+        // Always preserve the user's unique LLM-generated personality from Claude Code.
+        // The soul is the companion's voice — it may mention a species from a previous
+        // hatch, but the character identity is what matters, not species accuracy.
+        obj.insert("personality".to_string(), Value::String(personality.to_string()));
+    }
+
+    // Rolled bones
+    obj.insert("species".to_string(),  Value::String(bones.species));
+    obj.insert("rarity".to_string(),   Value::String(bones.rarity));
+    obj.insert("eyes".to_string(),     Value::String(bones.eyes));
+    obj.insert("hat".to_string(),      Value::String(bones.hat));
+    obj.insert("shiny".to_string(),    Value::Bool(bones.shiny));
+    obj.insert("stats".to_string(),    serde_json::to_value(&bones.stats).unwrap());
+    obj.insert("voice".to_string(),    Value::String(voice.to_string()));
+    obj.insert("hue".to_string(),      Value::String(hue));
+    obj.insert("companionSeed".to_string(), Value::String(salt.to_string()));
+    obj.insert("syncedFrom".to_string(), Value::String("claude-code".to_string()));
+    obj.insert("syncedAt".to_string(), Value::Number(hatched_at.into()));
+
+    // Atomic write via temp file
+    if let Some(parent) = buddy_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let tmp_path = buddy_path.with_extension("json.tmp");
+    let out = serde_json::to_string_pretty(&updated).map_err(|e| e.to_string())?;
+    fs::write(&tmp_path, &out).map_err(|e| e.to_string())?;
+    fs::rename(&tmp_path, &buddy_path).map_err(|e| e.to_string())?;
+
+    Ok(updated)
+}
+
+// ── Tauri commands ────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
 pub struct SyncResult {
@@ -360,66 +445,56 @@ pub fn sync_buddy() -> Result<SyncResult, String> {
         }
     }
 
-    // Roll bones and derive voice
-    let bones = roll_bones_with_salt(&uuid, &salt);
-    let voice = derive_voice(&bones.stats);
-    let hue   = species_hue(&bones.species).to_string();
-
-    // Load existing buddy.json to preserve manual fields
-    let mut updated: Value = if buddy_path.exists() {
-        fs::read_to_string(&buddy_path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or(Value::Object(Default::default()))
-    } else {
-        Value::Object(Default::default())
-    };
-
-    let obj = updated.as_object_mut()
-        .ok_or("buddy.json is not a JSON object")?;
-
-    // Soul fields from claude.json
-    if let Some(name) = soul.get("name").and_then(|v| v.as_str()) {
-        obj.insert("name".to_string(), Value::String(name.to_string()));
-    } else if !obj.contains_key("name") {
-        obj.insert("name".to_string(), Value::String("Buddy".to_string()));
-    }
-    if let Some(personality) = soul.get("personality").and_then(|v| v.as_str()) {
-        // Always preserve the user's unique LLM-generated personality from Claude Code.
-        // The soul is the companion's voice — it may mention a species from a previous
-        // hatch, but the character identity is what matters, not species accuracy.
-        obj.insert("personality".to_string(), Value::String(personality.to_string()));
-    }
-
-    // Bones
-    obj.insert("species".to_string(),  Value::String(bones.species));
-    obj.insert("rarity".to_string(),   Value::String(bones.rarity));
-    obj.insert("eyes".to_string(),     Value::String(bones.eyes));
-    obj.insert("hat".to_string(),      Value::String(bones.hat));
-    obj.insert("shiny".to_string(),    Value::Bool(bones.shiny));
-    obj.insert("stats".to_string(),    serde_json::to_value(&bones.stats).unwrap());
-    obj.insert("voice".to_string(),    Value::String(voice.to_string()));
-    obj.insert("hue".to_string(),      Value::String(hue));
-    obj.insert("companionSeed".to_string(), Value::String(salt));
-    obj.insert("syncedFrom".to_string(), Value::String("claude-code".to_string()));
-    obj.insert("syncedAt".to_string(), Value::Number(hatched_at.into()));
-
-    // Write atomically via temp file
-    if let Some(parent) = buddy_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let tmp_path = buddy_path.with_extension("json.tmp");
-    let out = serde_json::to_string_pretty(&updated).map_err(|e| e.to_string())?;
-    fs::write(&tmp_path, &out).map_err(|e| e.to_string())?;
-    fs::rename(&tmp_path, &buddy_path).map_err(|e| e.to_string())?;
-
-    let name    = updated.get("name").and_then(|v| v.as_str()).unwrap_or("Buddy");
-    let species = updated.get("species").and_then(|v| v.as_str()).unwrap_or("?");
-    let rarity  = updated.get("rarity").and_then(|v| v.as_str()).unwrap_or("?");
+    let buddy = write_buddy_bones(&home, &uuid, &salt, &soul, hatched_at)?;
+    let name    = buddy.get("name").and_then(|v| v.as_str()).unwrap_or("Buddy");
+    let species = buddy.get("species").and_then(|v| v.as_str()).unwrap_or("?");
+    let rarity  = buddy.get("rarity").and_then(|v| v.as_str()).unwrap_or("?");
+    let voice   = buddy.get("voice").and_then(|v| v.as_str()).unwrap_or("?");
 
     Ok(SyncResult {
         status:  "synced".to_string(),
         message: format!("synced → {} ({}, {}, {})", name, species, rarity, voice),
     })
+}
+
+/// Re-rolls the Oracle's visual identity (species, stats, eyes, hat, shiny, hue, voice)
+/// by generating a new random salt. Name and personality (LLM-generated soul) are
+/// preserved. The new salt is written to ~/.claude-code-any-buddy.json so it persists
+/// across restarts — sync_buddy() will see the salt match on next launch and skip re-sync.
+/// Returns the full buddy JSON so the frontend can update the Oracle card immediately.
+#[tauri::command]
+pub fn reroll_oracle() -> Result<Value, String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+
+    // Generate new salt and persist it so restarts stay rolled
+    let salt = generate_salt();
+    let ab_path = PathBuf::from(&home).join(".claude-code-any-buddy.json");
+    let ab_json = serde_json::json!({ "salt": &salt });
+    fs::write(&ab_path, serde_json::to_string_pretty(&ab_json).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+
+    // Read soul from ~/.claude.json — best-effort, falls back to empty soul
+    let (uuid, soul, hatched_at) = {
+        let claude_path = PathBuf::from(&home).join(".claude.json");
+        match fs::read_to_string(&claude_path)
+            .ok()
+            .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        {
+            Some(claude) => {
+                let soul = claude.get("companion").cloned()
+                    .unwrap_or(Value::Object(Default::default()));
+                let uuid = claude.pointer("/oauthAccount/accountUuid")
+                    .or_else(|| claude.get("userID"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("anon")
+                    .to_string();
+                let hatched_at = soul.get("hatchedAt").and_then(|v| v.as_i64()).unwrap_or(0);
+                (uuid, soul, hatched_at)
+            }
+            None => ("anon".to_string(), Value::Object(Default::default()), 0),
+        }
+    };
+
+    write_buddy_bones(&home, &uuid, &salt, &soul, hatched_at)
 }
 

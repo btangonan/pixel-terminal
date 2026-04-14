@@ -5,7 +5,7 @@
 const _NIM_KEY = 'pixel-nim-balance';
 
 export const NIM_PER_TOKENS  = 1000; // 1 nim per 1000 tokens spent
-export const REROLL_NIM_COST = 100;
+export const REROLL_NIM_COST = 0;
 
 export function getNimBalance() {
   return parseInt(localStorage.getItem(_NIM_KEY) || '0', 10);

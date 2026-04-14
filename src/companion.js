@@ -662,4 +662,13 @@ export async function saveCommentaryFrequency(level) {
   }
 }
 
+// Reloads buddy from disk and updates the live module-level reference.
+// Call after any operation that rewrites buddy.json (e.g. reroll_oracle).
+// Returns the fresh buddy object. Because `buddy` is a live ES module binding,
+// all importers of `companionBuddy` and closures over `buddy` see the new value.
+export async function reloadBuddy() {
+  await loadBuddy();
+  return buddy;
+}
+
 export { LINT_LOG, buddy as companionBuddy };

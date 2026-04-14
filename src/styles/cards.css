@@ -41,11 +41,34 @@
   color: var(--text-mute);
 }
 
-.session-card-tokens {
-  font-size: var(--fs-sm);
-  color: var(--text-mid);
-  letter-spacing: 0.3px;
-  line-height: var(--lh-tight);
+.session-card-tokens-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.compaction-meter {
+  flex: 1;
+  min-width: 40px;
+  height: 4px;
+  background: #2a2a2a;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.compaction-meter-fill {
+  height: 100%;
+  width: 0%;
+  background: #666666;
+  border-radius: 2px;
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+.compaction-pct {
+  font-size: 10px;
+  color: #666666;
+  min-width: 28px;
 }
 
 /* Inline status badge — idle/error only */

@@ -4,13 +4,24 @@ import { $, esc, showConfirm } from './dom.js';
 import { exitHistoryView } from './history.js';
 import {
   sessions, sessionLogs,
-  getActiveSessionId, setActiveSessionId, formatTokens, syncOmiSessions,
+  getActiveSessionId, setActiveSessionId, syncOmiSessions,
   rollFamiliarBones, incrementFamiliarReroll,
 } from './session.js';
 import { getNimBalance, spendNim, REROLL_NIM_COST } from './nim.js';
 import { renderFrame, EYE_CHARS, DEFAULT_EYE } from './ascii-sprites.js';
-import { companionBuddy, saveCommentaryFrequency } from './companion.js';
+import { companionBuddy, saveCommentaryFrequency, reloadBuddy } from './companion.js';
 import { killSession, IDLE_STALE_MS } from './session-lifecycle.js';
+
+function getCompactionPct(s) {
+  // Prefer authoritative % from statusline sideband (API truth).
+  // Falls back to local math when sideband hasn't been read yet.
+  if (typeof s._authoritativePct === 'number') return s._authoritativePct;
+  if (!s._contextTokens || !s._contextBaseline) return 0;
+  const usable = (s._contextWindow || 200_000) - s._contextBaseline;
+  if (usable <= 0) return 0;
+  const used = Math.max(0, s._contextTokens - s._contextBaseline);
+  return Math.min(100, Math.round((used / usable) * 100));
+}
 import { renderMessageLog, updateWorkingCursor, setPinToBottom } from './messages.js';
 
 // ── Re-roll gate — set > 0 to require tokens; 0 = open ───────────────────────
@@ -231,6 +242,19 @@ export function showOracleCard(buddy) {
   }
   footer.appendChild(freqRow);
 
+  // RE-ROLL ORACLE button
+  const rerollOracleSlot = document.createElement('div');
+  rerollOracleSlot.className = 'fc-reroll-slot';
+  const rerollOracleBtn = document.createElement('button');
+  rerollOracleBtn.className = 'fc-reroll-btn';
+  rerollOracleBtn.textContent = 'RE-ROLL ORACLE';
+  rerollOracleBtn.addEventListener('click', () => {
+    hideOracleCard();
+    showOracleRerollConfirm();
+  });
+  rerollOracleSlot.appendChild(rerollOracleBtn);
+  footer.appendChild(rerollOracleSlot);
+
   document.body.appendChild(overlay);
   _oracleCardEl = overlay;
 
@@ -350,6 +374,74 @@ function showRerollConfirm(sessionId) {
   overlay._keyHandler = onKey;
 }
 
+// ── Oracle Re-roll confirm dialog ─────────────────────────
+
+let _oracleRerollOverlayEl = null;
+
+function _hideOracleRerollConfirm() {
+  if (_oracleRerollOverlayEl) {
+    if (_oracleRerollOverlayEl._keyHandler) document.removeEventListener('keydown', _oracleRerollOverlayEl._keyHandler);
+    _oracleRerollOverlayEl.remove();
+    _oracleRerollOverlayEl = null;
+  }
+}
+
+function showOracleRerollConfirm() {
+  _hideOracleRerollConfirm();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'fc-overlay';
+  overlay.addEventListener('click', e => { if (e.target === overlay) _hideOracleRerollConfirm(); });
+
+  const dialog = document.createElement('div');
+  dialog.className = 'fc-confirm';
+
+  const _title = document.createElement('div');
+  _title.className = 'fc-confirm-title';
+  _title.textContent = 'RE-ROLL ORACLE?';
+
+  const _warning = document.createElement('div');
+  _warning.className = 'fc-confirm-warning';
+  _warning.textContent = 'Species and stats will change. Name and personality are preserved.';
+
+  const _actions = document.createElement('div');
+  _actions.className = 'fc-confirm-actions';
+  const _goBtn = document.createElement('button');
+  _goBtn.className = 'fc-confirm-btn fc-confirm-btn--go';
+  _goBtn.textContent = 'CONFIRM RE-ROLL';
+  const _cancelBtn = document.createElement('button');
+  _cancelBtn.className = 'fc-confirm-btn fc-confirm-btn--cancel';
+  _cancelBtn.textContent = 'CANCEL';
+  _actions.append(_goBtn, _cancelBtn);
+
+  dialog.append(_title, _warning, _actions);
+
+  _cancelBtn.addEventListener('click', _hideOracleRerollConfirm);
+  _goBtn.addEventListener('click', async () => {
+    _goBtn.disabled = true;
+    _goBtn.textContent = 'ROLLING\u2026';
+    try {
+      const { invoke } = window.__TAURI__.core;
+      await invoke('reroll_oracle');
+      const freshBuddy = await reloadBuddy();
+      _hideOracleRerollConfirm();
+      showOracleCard(freshBuddy);
+    } catch (e) {
+      console.error('[oracle-reroll] failed:', e);
+      _goBtn.disabled = false;
+      _goBtn.textContent = 'CONFIRM RE-ROLL';
+    }
+  });
+
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+  _oracleRerollOverlayEl = overlay;
+
+  const onKey = e => { if (e.key === 'Escape') _hideOracleRerollConfirm(); };
+  document.addEventListener('keydown', onKey);
+  overlay._keyHandler = onKey;
+}
+
 // ─────────────────────────────────────────────────────────
 
 export function renderSessionCard(id) {
@@ -364,7 +456,12 @@ export function renderSessionCard(id) {
       <div class="sprite-wrap" id="card-sprite-wrap-${id}"></div>
       <div class="session-card-info">
         <div class="session-card-name">${esc(s.name)}</div>
-        <div class="session-card-tokens" id="card-tokens-${id}"></div>
+        <div class="session-card-tokens-row">
+          <div class="compaction-meter" id="card-meter-${id}">
+            <div class="compaction-meter-fill" id="card-meter-fill-${id}"></div>
+          </div>
+          <div class="compaction-pct" id="card-meter-pct-${id}"></div>
+        </div>
       </div>
       <span class="card-badge" id="card-status-${id}"></span>
     </div>
@@ -440,9 +537,15 @@ export function updateSessionCard(id) {
     statusEl.style.display = '';
   }
 
-  const tokensEl = document.getElementById(`card-tokens-${id}`);
-  if (tokensEl) {
-    tokensEl.textContent = formatTokens(s.tokens + (s._liveTokens || 0));
+  const meterFill = document.getElementById(`card-meter-fill-${id}`);
+  const meterPct = document.getElementById(`card-meter-pct-${id}`);
+  if (meterFill) {
+    const pct = getCompactionPct(s);
+    meterFill.style.width = `${pct}%`;
+    if (pct >= 85)      meterFill.style.backgroundColor = '#e05252';
+    else if (pct >= 65) meterFill.style.backgroundColor = '#d4a843';
+    else                meterFill.style.backgroundColor = '#666666';
+    if (meterPct) meterPct.textContent = pct > 0 ? `${pct}%` : '';
   }
 
   const card = document.getElementById(`card-${id}`);

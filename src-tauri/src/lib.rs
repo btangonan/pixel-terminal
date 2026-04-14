@@ -9,7 +9,7 @@ use ws_bridge::{get_voice_status, ptt_release, ptt_start, set_omi_listening, set
 pub mod commands;
 use commands::file_io::{append_line_to_file, get_file_size, get_file_size_any, read_file_as_base64, read_file_as_text, write_file_as_text};
 use commands::history::{load_session_history, scan_session_history};
-use commands::companion::sync_buddy;
+use commands::companion::{sync_buddy, reroll_oracle};
 use commands::daemon::{start_daemon, DaemonShared};
 use commands::oracle::oracle_query;
 use commands::misc::{js_log, read_slash_command_content, read_slash_commands};
@@ -96,6 +96,7 @@ pub fn run() {
             write_file_as_text,
             append_line_to_file,
             sync_buddy,
+            reroll_oracle,
             oracle_query
         ])
         .build(tauri::generate_context!())
