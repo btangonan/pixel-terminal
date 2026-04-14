@@ -157,21 +157,32 @@ let _oracleThinkTimer = null;
 let _thinkX    = 0;
 let _thinkDir  = 1;
 let _thinkFrame = 0;
+let _thinkMaxX = 16;     // computed from DOM in _startOracleThink
 const _THINK_STEP = 8;   // px per tick — matches START HERE walker
-const _THINK_MAX  = 8;   // ±8px oscillation range
 
 function _oracleThinkTick() {
   if (!_asciiPre) return;
   _thinkFrame = (_thinkFrame + 1) % 3;
   updateAsciiFrame(_thinkFrame);
   _thinkX += _thinkDir * _THINK_STEP;
-  if (_thinkX >= _THINK_MAX)  { _thinkX = _THINK_MAX;  _thinkDir = -1; }
-  if (_thinkX <= -_THINK_MAX) { _thinkX = -_THINK_MAX; _thinkDir =  1; }
-  _asciiPre.style.transform = `translateX(${_thinkX}px)`;
+  if (_thinkX >= _thinkMaxX) { _thinkX = _thinkMaxX; _thinkDir = -1; }
+  if (_thinkX <= 0)           { _thinkX = 0;          _thinkDir =  1; }
+  // Sprites face left by default — flip to face right when moving right (matches START HERE)
+  const flip = _thinkDir > 0 ? -1 : 1;
+  _asciiPre.style.transform = `translateX(${_thinkX}px) scaleX(${flip})`;
 }
 
 function _startOracleThink() {
   if (_oracleThinkTimer) return;
+  // Measure actual runway: left edge of #vexil-ascii → just before .vexil-bio-text, minus sprite width
+  const asciiEl = document.getElementById('vexil-ascii');
+  const textEl  = document.querySelector('.vexil-bio-text');
+  if (asciiEl && textEl && _asciiPre) {
+    const asciiRect = asciiEl.getBoundingClientRect();
+    const textRect  = textEl.getBoundingClientRect();
+    const preW      = _asciiPre.getBoundingClientRect().width || 65;
+    _thinkMaxX = Math.max(8, Math.floor(textRect.left - asciiRect.left - preW - 4));
+  }
   // Hand off frame control — pause fidget and blink cycles
   clearTimeout(_asciiAnimTimer);
   clearTimeout(_asciiBlinkTimer);
