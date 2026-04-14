@@ -36,30 +36,34 @@
 
 /* Buddy bio — header row: art left, name right */
 .vexil-bio {
-  display: grid;
-  grid-template-columns: 82px 1fr 1fr;
+  display: flex;
+  flex-direction: row;
   align-items: center;
+  gap: 10px;
   padding: 6px 8px;
-  gap: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--companion-hue, #d87756) 35%, transparent);
   flex-shrink: 0;
 }
 .vexil-bio.hidden { display: none; }
-.vexil-bio-name,
-.vexil-bio-type {
+.vexil-bio-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+.vexil-bio-name {
   font-family: var(--font);
   font-size: 11px;
   color: var(--companion-hue, #d87756);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  padding: 0 10px;
-}
-.vexil-bio-name {
-  border-left: 1px solid color-mix(in srgb, var(--companion-hue, #d87756) 25%, transparent);
 }
 .vexil-bio-type {
-  border-left: 1px solid color-mix(in srgb, var(--companion-hue, #d87756) 25%, transparent);
-  color: color-mix(in srgb, var(--companion-hue, #d87756) 70%, transparent);
+  font-family: var(--font);
+  font-size: 9px;
+  color: color-mix(in srgb, var(--companion-hue, #d87756) 65%, transparent);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 .vexil-bio-personality { display: none; }
 
