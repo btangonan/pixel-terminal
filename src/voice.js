@@ -247,10 +247,9 @@ function initOraclePreChat() {
     return el;
   }
 
-  async function submit() {
-    const text = input.value.trim();
+  // Core oracle query — shared by typed input and voice PTT.
+  async function submitToOracle(text) {
     if (!text || _pendingReqId !== null) return;
-    input.value = '';
 
     appendEntry(text, 'oracle-user-msg');
     _thinkingEl = appendEntry('· · ·', 'oracle-thinking');
@@ -292,6 +291,13 @@ function initOraclePreChat() {
     }
   }
 
+  async function submit() {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    await submitToOracle(text);
+  }
+
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); submit(); }
   });
@@ -302,6 +308,7 @@ function initOraclePreChat() {
   setVisible();
 
   // Post intro once — only after companion is ready AND a session is active
+  return { submitToOracle };
 }
 
 // ── Init (called once from bootstrap) ──────────────────────
@@ -346,6 +353,10 @@ export function initVoice() {
     }
   });
 
+  // submitToOracle is bound after initOraclePreChat() runs below.
+  // Declared here so the omi:command closure can reference it.
+  let submitToOracle = null;
+
   // Omi command events
   tauriListen('omi:command', (event) => {
     const { type, text, session, ts, dispatched } = event.payload;
@@ -354,11 +365,14 @@ export function initVoice() {
       return;
     }
     if (!omiListening) return;
+    if (type === 'prompt') {
+      // Voice input → Oracle (Vexil) by default, not the active Claude Code session.
+      if (submitToOracle) submitToOracle(text);
+      return;
+    }
     const targetId = resolveSession(session ?? null);
     if (!targetId) return;
-    if (type === 'prompt') {
-      sendMessage(targetId, text);
-    } else if (type === 'switch') {
+    if (type === 'switch') {
       setActiveSession(targetId);
     } else if (type === 'list_sessions') {
       const lines = [...sessions.entries()]
@@ -430,6 +444,6 @@ export function initVoice() {
   initVexilTabs();
   setVexilLogListener(renderVexilLog);
 
-  // Oracle pre-session chat
-  initOraclePreChat();
+  // Oracle pre-session chat — capture submitToOracle for voice PTT routing
+  ({ submitToOracle } = initOraclePreChat());
 }

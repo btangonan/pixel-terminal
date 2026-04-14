@@ -17,6 +17,10 @@
 #omi-indicator.connected {
   background: #d87756;              /* orange = mic/ble connected */
 }
+#omi-indicator.ptt {
+  background: #39ff14;              /* green = voice channel open (PTT held) */
+  transition: background 0.1s;
+}
 
 /* ── Always-on mic toggle ─── */
 #always-on-btn {

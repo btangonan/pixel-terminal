@@ -182,6 +182,34 @@ impl OraclePool {
     }
 }
 
+// ── TTS helpers ───────────────────────────────────────────────────────────────
+
+/// Strip *asterisk actions* from oracle text — they're visual-only; jarring when spoken.
+fn strip_for_speech(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut in_star = false;
+    for ch in text.chars() {
+        match ch {
+            '*' => { in_star = !in_star; }
+            _   => { if !in_star { out.push(ch); } }
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Fire-and-forget TTS via macOS `say`. Reads ttsEnabled/ttsVoice from buddy.json.
+fn tts_speak(text: &str) {
+    let cleaned = strip_for_speech(text);
+    if cleaned.is_empty() { return; }
+    let buddy = super::daemon::load_buddy();
+    if !buddy.get("ttsEnabled").and_then(|v| v.as_bool()).unwrap_or(true) { return; }
+    let voice = buddy.get("ttsVoice").and_then(|v| v.as_str()).unwrap_or("Samantha").to_string();
+    let _ = std::process::Command::new("say")
+        .arg("-v").arg(&voice)
+        .arg(&cleaned)
+        .spawn();
+}
+
 async fn which_claude() -> Option<String> {
     match Command::new("which").arg("claude").output().await {
         Ok(o) if o.status.success() => {
@@ -357,5 +385,6 @@ pub async fn oracle_query(
         .ok_or_else(|| "oracle unreachable".to_string())?;
 
     println!("[oracle] query → \"{}\"", reply.chars().take(80).collect::<String>());
+    tts_speak(&reply);
     Ok(serde_json::json!({"msg": reply, "req_id": req_id}))
 }
