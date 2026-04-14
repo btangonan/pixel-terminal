@@ -48,8 +48,10 @@
 .vexil-bio-text {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 2px;
   flex: 1;
+  align-self: center;
 }
 .vexil-bio-name {
   font-family: var(--font);
