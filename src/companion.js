@@ -174,8 +174,10 @@ function _oracleThinkTick() {
 
 function _startOracleThink() {
   if (_oracleThinkTimer) return;
-  // Measure actual runway: full #vexil-bio row width minus sprite width and right margin.
-  // #vexil-ascii is only 78px but overflow:visible lets the sprite traverse the whole row.
+  // Fade text out so sprite has the full bio row as runway
+  const bioTextEl = document.querySelector('.vexil-bio-text');
+  if (bioTextEl) { bioTextEl.style.transition = 'opacity 0.15s'; bioTextEl.style.opacity = '0'; }
+  // Measure full runway: bio row width minus sprite width and right margin
   const bioEl = document.getElementById('vexil-bio');
   if (bioEl && _asciiPre) {
     const bioW = bioEl.getBoundingClientRect().width;
@@ -196,6 +198,9 @@ function _stopOracleThink() {
   clearInterval(_oracleThinkTimer);
   _oracleThinkTimer = null;
   if (_asciiPre) _asciiPre.style.transform = '';
+  // Fade text back in
+  const bioTextEl = document.querySelector('.vexil-bio-text');
+  if (bioTextEl) { bioTextEl.style.opacity = '1'; }
   // Resume normal idle animation
   scheduleNextFidget();
   scheduleNextBlink();
