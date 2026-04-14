@@ -157,7 +157,8 @@ let _oracleThinkTimer = null;
 let _thinkX    = 0;
 let _thinkDir  = 1;
 let _thinkFrame = 0;
-let _thinkMaxX = 16;     // computed from DOM in _startOracleThink
+let _thinkMinX = 0;      // left wall (negative, computed from DOM)
+let _thinkMaxX = 16;     // right wall (computed from DOM)
 const _THINK_STEP = 8;   // px per tick — matches START HERE walker
 
 function _oracleThinkTick() {
@@ -166,7 +167,7 @@ function _oracleThinkTick() {
   updateAsciiFrame(_thinkFrame);
   _thinkX += _thinkDir * _THINK_STEP;
   if (_thinkX >= _thinkMaxX) { _thinkX = _thinkMaxX; _thinkDir = -1; }
-  if (_thinkX <= 0)           { _thinkX = 0;          _thinkDir =  1; }
+  if (_thinkX <= _thinkMinX) { _thinkX = _thinkMinX; _thinkDir =  1; }
   // Sprites face left by default — flip to face right when moving right (matches START HERE)
   const flip = _thinkDir > 0 ? -1 : 1;
   _asciiPre.style.transform = `translateX(${_thinkX}px) scaleX(${flip})`;
@@ -174,13 +175,19 @@ function _oracleThinkTick() {
 
 function _startOracleThink() {
   if (_oracleThinkTimer) return;
-  // Runway: left edge of #vexil-ascii to 6px before .vexil-bio-text starts, minus sprite width
+  // Compute full runway:
+  //   Left wall:  bio content left edge — #vexil-ascii is centered so there's space to its left
+  //   Right wall: just before .vexil-bio-text starts, minus sprite width and margin
+  const bioEl   = document.getElementById('vexil-bio');
   const asciiEl = document.getElementById('vexil-ascii');
   const textEl  = document.querySelector('.vexil-bio-text');
-  if (asciiEl && textEl && _asciiPre) {
+  if (bioEl && asciiEl && textEl && _asciiPre) {
+    const bioRect   = bioEl.getBoundingClientRect();
     const asciiRect = asciiEl.getBoundingClientRect();
     const textRect  = textEl.getBoundingClientRect();
     const preW      = _asciiPre.getBoundingClientRect().width || 65;
+    const padLeft   = parseFloat(getComputedStyle(bioEl).paddingLeft) || 8;
+    _thinkMinX = -(asciiRect.left - bioRect.left - padLeft);  // negative: space left of ascii
     _thinkMaxX = Math.max(8, Math.floor(textRect.left - asciiRect.left - preW - 6));
   }
   // Hand off frame control — pause fidget and blink cycles
@@ -188,7 +195,7 @@ function _startOracleThink() {
   clearTimeout(_asciiBlinkTimer);
   _asciiState = 'idle';
   _asciiBlinking = false;
-  _thinkX = 0; _thinkDir = 1; _thinkFrame = 0;
+  _thinkX = _thinkMinX; _thinkDir = 1; _thinkFrame = 0;
   _oracleThinkTimer = setInterval(_oracleThinkTick, 320);
 }
 
