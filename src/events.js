@@ -8,6 +8,7 @@ import { pxLog } from './logger.js';
 import { addToVexilLog, getBuddyTrigger, triggerAsciiAction } from './companion.js';
 import { accrueNimForSession } from './nim.js';
 import { writeTaskLedger } from './session-lifecycle.js';
+import { classifyHookEvent } from './hook-events.js';
 
 // ── Model context window sizes (tokens) ───────────────────────────────
 // NOTE: Opus 4.6 and Sonnet 4.6 support 1M tokens at the API level (GA March 2026),
@@ -64,7 +65,7 @@ const INTERNAL_TOOLS = new Set([
   'EnterWorktree','ExitWorktree',
 ]);
 function isInternalTool(name) {
-  return name.startsWith('mcp__') || INTERNAL_TOOLS.has(name);
+  return INTERNAL_TOOLS.has(name);
 }
 function isFeedVisible(name) {
   // MCP tools are real user activity — emit to feed for daemon commentary.
@@ -219,6 +220,8 @@ export function handleEvent(id, event) {
     if (!s._contextBaseline && s._contextTokens > 0) {
       s._contextBaseline = s._contextTokens;
     }
+    // Update bar immediately — don't wait for turn_complete + sideband
+    updateSessionCard(id);
       }
       const blocks = event.message?.content || [];
 
@@ -426,8 +429,8 @@ export function handleEvent(id, event) {
           s._hitRateLimit = false;
           s._perfOutTokens = 0;
         }
-        // Always emit turn_complete — daemon uses tool_count to gate commentary,
-        // but needs all turns (including pure-chat) for oracle conversation context.
+        // Always emit turn_complete — daemon records all turns for oracle context.
+        // Commentary eligibility is decided by daemon richness gate, not tool_count.
         if (s._turnText || s._turnToolCount > 0) {
           appendVexilFeed({
             type:       'turn_complete',
@@ -520,6 +523,36 @@ export function handleEvent(id, event) {
         s.model = event.model || 'unknown';
         s._contextWindow = getContextWindow(s.model);
         pxLog('READY', `id:${id.slice(0,8)} model:${s.model} ctx:${s._contextWindow}`);
+        // Eagerly restore last-known % from sideband (covers reconnect to existing session)
+        readContextSideband(id).then(sb => {
+          if (!sb || typeof sb.pct !== 'number') return;
+          s._authoritativePct = sb.pct;
+          if (sb.window) s._contextWindow = sb.window;
+          updateSessionCard(id);
+        }).catch(() => {});
+        // Also try project-scoped last_context.json — persists across session UUID changes,
+        // so bar shows ~20% on very first message of a new spawn into an existing project
+        if (s.cwd) {
+          const encoded = s.cwd.replace(/^\//, '').replace(/\//g, '-');
+          const projPath = `~/.local/share/pixel-terminal/projects/-${encoded}/last_context.json`;
+          pxLog('CTX', `id:${id.slice(0,8)} project-read attempt: ${projPath}`);
+          window.__TAURI__?.core?.invoke('read_file_as_text', { path: projPath })
+            .then(raw => {
+              pxLog('CTX', `id:${id.slice(0,8)} project-read raw: ${raw ? raw.slice(0,60) : 'null'}`);
+              if (!raw) return;
+              const sb = JSON.parse(raw);
+              if (typeof sb.pct === 'number' && typeof s._authoritativePct !== 'number') {
+                s._authoritativePct = sb.pct;
+                if (sb.window) s._contextWindow = sb.window;
+                pxLog('CTX', `id:${id.slice(0,8)} project-read applied: ${sb.pct}%`);
+                updateSessionCard(id);
+              } else {
+                pxLog('CTX', `id:${id.slice(0,8)} project-read skipped: pct=${sb.pct} authPct=${s._authoritativePct}`);
+              }
+            }).catch(err => pxLog('CTX', `id:${id.slice(0,8)} project-read error: ${err?.message || err}`));
+        } else {
+          pxLog('CTX', `id:${id.slice(0,8)} project-read skipped: no cwd`);
+        }
         pushMessage(id, { type: 'system-msg', text: `Ready \u00b7 ${s.model}` });
         // After ESC restart, always go idle regardless of status.
         // Otherwise: don't clobber 'working' if user queued a message before init.
@@ -553,19 +586,22 @@ export function handleEvent(id, event) {
           })();
         }
       }
-      // Hook lifecycle events (from --include-hook-events)
-      if (event.subtype === 'hook_started' && event.hook_event === 'PreCompact') {
-        pxLog('COMPACT', `id:${id.slice(0,8)} PreCompact — context compressing`);
-        pushMessage(id, { type: 'system-msg', text: 'Context compacting\u2026' });
-        updateSessionCard(id);
-      }
-      if (event.subtype === 'hook_response' && event.hook_event === 'PostCompact') {
-        pxLog('COMPACT', `id:${id.slice(0,8)} PostCompact — recovery injected by hook`);
-        pushMessage(id, { type: 'system-msg', text: 'Context recovered. Resuming.' });
-        s._compactionWarned = false;
-        s._compactionDetected = false;  // hook handled it — no inline fallback needed
-        s._contextBaseline = null;  // re-baseline on next assistant event
-        updateSessionCard(id);
+      // Hook lifecycle events (from --include-hook-events).
+      // Classification happens in src/hook-events.js (pure function, unit-testable
+      // via tests/hook_event_contract.test.js). This block applies the resulting
+      // action plan as side effects against the current session.
+      try {
+        const plan = classifyHookEvent(event, { isInternalTool });
+        for (const log of plan.logs) {
+          pxLog(log.tag, `id:${id.slice(0,8)} ${log.text}`);
+        }
+        for (const render of plan.renders) {
+          pushMessage(id, render);
+        }
+        if (plan.stateUpdates) Object.assign(s, plan.stateUpdates);
+        if (plan.updateCard) updateSessionCard(id);
+      } catch (err) {
+        pxLog('HOOK-ERROR', `id:${id.slice(0,8)} hook:${event.hook_event || '?'} ${err?.message || err}`);
       }
       break;
 
@@ -573,9 +609,6 @@ export function handleEvent(id, event) {
       s._hitRateLimit = true;
       s._rateLimitCount = (s._rateLimitCount || 0) + 1;
       pxLog('RATE-LIMIT', `id:${id.slice(0,8)} hit #${s._rateLimitCount} — CLI retrying automatically`);
-      pushMessage(id, { type: 'system-msg', text: s._rateLimitCount > 1
-        ? `\u29d6 rate limited \u00d7${s._rateLimitCount} \u00b7 retrying\u2026`
-        : '\u29d6 rate limited \u00b7 retrying\u2026' });
       appendVexilFeed({ type: 'rate_limit', session_id: id.slice(0, 8), retry: s._rateLimitCount });
       break;
 

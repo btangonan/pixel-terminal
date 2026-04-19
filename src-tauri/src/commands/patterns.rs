@@ -64,13 +64,18 @@ pub(crate) fn build_persona(recent_actions: &VecDeque<String>) -> String {
     let buddy     = load_buddy();
     let name = coalesce(str_val(&companion, "name"), str_val(&buddy, "name"), "Vexil");
     let raw_personality = coalesce(str_val(&companion, "personality"), str_val(&buddy, "personality"), "");
-    let (trait_line, fallback) = buddy_traits(&buddy);
+    let (trait_line, fallback, ethology) = buddy_traits(&buddy);
     let personality = if raw_personality.is_empty() { &fallback } else { raw_personality };
 
     let mut p = format!(
         "{personality}\n\n"
     );
     if !trait_line.is_empty() { p.push_str(&trait_line); p.push('\n'); }
+    // Ethology shapes observation style and cadence even in short bubbles
+    if !ethology.is_empty() {
+        p.push_str(&format!("Your animal nature: {ethology}\n"));
+        p.push_str("Your species ethology defines how you observe and what you notice — let it shape your one line.\n");
+    }
     p.push_str(&format!(
         "You watch across multiple Claude Code sessions and occasionally drop one line \
         in a speech bubble. You're not {name} — you're writing its line.\n\
@@ -138,18 +143,19 @@ pub(crate) fn build_prompt(trigger: &str, data: &Value) -> Option<String> {
                     "<user_msg>{um}</user_msg>\n<claude_conclusion>{tt}</claude_conclusion>\n\
                     Tools: {steps} ({tc} tools).\n\n\
                     Write the next line for the companion. Drop ONE sharp observation — a pattern, a momentum shift, \
-                    something interesting about what the user is building or where they're heading. \
-                    Focus ONLY on the user's intent, workflow state, or project domain. \
-                    Do NOT comment on Claude's internal bash commands, shell delays, or tool parameters. \
-                    Do NOT give refactoring advice. Under 20 words. \
-                    If you have nothing genuinely additive to say, output exactly: SKIP"
+                    something the user might be underestimating, or where this is heading. \
+                    Focus on the user's intent, workflow state, or project domain. \
+                    Do NOT comment on Claude's tool calls or shell output. Do NOT give refactoring advice. \
+                    Under 20 words. \
+                    Output SKIP only if the turn contains no concrete decision, direction, or pattern worth noting \
+                    (e.g. a one-word reply, pure acknowledgement, or entirely generic closure with nothing to observe)."
                 ))
             } else {
                 Some(format!(
                     "Tool sequence: {steps} ({tc} tools).\n\n\
                     Write the next line for the companion. Drop ONE sharp observation about what's happening — \
                     a pattern, a pivot, momentum. Do NOT give refactoring advice. Under 20 words. \
-                    If you have nothing genuinely additive to say, output exactly: SKIP"
+                    Output SKIP only if there is genuinely nothing concrete to observe."
                 ))
             }
         }

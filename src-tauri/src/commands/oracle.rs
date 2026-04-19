@@ -161,7 +161,10 @@ impl OraclePool {
                     if let Ok(evt) = serde_json::from_str::<Value>(&line) {
                         if evt["type"].as_str() == Some("result") {
                             let r = evt["result"].as_str().unwrap_or("").trim().to_string();
-                            if r.is_empty() || r == "SKIP" { break None; }
+                            if r.is_empty() || r == "SKIP" {
+                                eprintln!("[{}] SKIP received — no output", self.label);
+                                break None;
+                            }
                             break Some(r);
                         }
                     }
@@ -346,6 +349,88 @@ pub(crate) async fn run_oracle(
 }
 
 // ── Startup check (kept for daemon commentary path) ──────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── strip_for_speech ──────────────────────────────────────────────────────
+
+    #[test]
+    fn strip_empty_string() {
+        assert_eq!(strip_for_speech(""), "");
+    }
+
+    #[test]
+    fn strip_no_asterisks_unchanged() {
+        assert_eq!(strip_for_speech("Hello world"), "Hello world");
+    }
+
+    #[test]
+    fn strip_single_action_removed() {
+        let result = strip_for_speech("*winks* Hello");
+        assert!(!result.contains("winks"), "asterisk action should be removed");
+        assert!(result.contains("Hello"));
+    }
+
+    #[test]
+    fn strip_action_in_middle() {
+        let result = strip_for_speech("Hello *waves* world");
+        assert_eq!(result, "Hello world");
+    }
+
+    #[test]
+    fn strip_multiple_actions() {
+        let result = strip_for_speech("*hisses* You missed it. *narrows eyes*");
+        assert!(!result.contains("hisses"));
+        assert!(!result.contains("narrows"));
+        assert!(result.contains("You missed it."));
+    }
+
+    #[test]
+    fn strip_action_only_returns_empty() {
+        let result = strip_for_speech("*scales shift*");
+        assert_eq!(result.trim(), "");
+    }
+
+    #[test]
+    fn strip_collapses_whitespace() {
+        // After removing action, multiple spaces get collapsed by split_whitespace
+        let result = strip_for_speech("Hello   *waves*   world");
+        assert_eq!(result, "Hello world");
+    }
+
+    // ── build_oracle_system ───────────────────────────────────────────────────
+
+    #[test]
+    fn build_oracle_system_no_sessions() {
+        let result = build_oracle_system(&[]);
+        assert!(!result.is_empty());
+        assert!(
+            result.contains("No sessions open") || result.contains("no session"),
+            "no-session prompt should tell user to open a project: {result}"
+        );
+    }
+
+    #[test]
+    fn build_oracle_system_with_sessions_includes_names() {
+        let sessions = vec![
+            serde_json::json!({"name": "myproject", "cwd": "/home/user/myproject"}),
+            serde_json::json!({"name": "api-server", "cwd": "/home/user/api-server"}),
+        ];
+        let result = build_oracle_system(&sessions);
+        assert!(result.contains("myproject"), "result should include session name");
+        assert!(result.contains("api-server"), "result should include second session name");
+    }
+
+    #[test]
+    fn build_oracle_system_nonempty_for_any_input() {
+        let empty = build_oracle_system(&[]);
+        let one = build_oracle_system(&[serde_json::json!({"name": "x", "cwd": "/x"})]);
+        assert!(empty.len() > 10);
+        assert!(one.len() > 10);
+    }
+}
 
 pub(crate) async fn check_claude_path() -> bool {
     match Command::new("which").arg("claude").output().await {

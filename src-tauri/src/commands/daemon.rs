@@ -26,7 +26,7 @@ use tokio::time::sleep;
 
 const POLL_MS:               u64 = 400;
 const COOLDOWN_S:            f64 = 8.0;
-const RATE_LIMIT_BACKOFF_S:  f64 = 30.0;  // suppress commentary after user hits rate limit
+const RATE_LIMIT_BACKOFF_S:  f64 = 8.0;   // suppress commentary after user hits rate limit (match COOLDOWN_S — CLI already retried, no extra penalty)
 const TURN_COOLDOWN_S:       f64 = 4.0;
 const TOKEN_BLOAT_THRESHOLD: u64 = 80_000;
 const FIRED_PATTERN_TTL_S:   f64 = 300.0;
@@ -105,6 +105,24 @@ pub fn expand_home(path: &str) -> String {
 
 pub(crate) fn now_s() -> f64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs_f64()
+}
+
+// Returns true for trivially low-value turns that aren't worth paying a commentary pool call for.
+// Criteria: no tools, no recent tool activity, AND either (a) user message is a pure ack/confirmation
+// or (b) both user message and response are very short (back-and-forth with nothing to observe).
+fn is_low_value_turn(user_msg: &str, turn_text: &str, tool_count: u64, has_recent_acts: bool) -> bool {
+    if tool_count > 0 || has_recent_acts { return false; }
+    const ACK_PHRASES: &[&str] = &[
+        "ok", "okay", "thanks", "thank you", "got it", "sounds good", "makes sense",
+        "understood", "noted", "great", "perfect", "nice", "cool", "alright", "lgtm",
+        "will do", "looks good", "sure", "yep", "yes", "no", "nope", "fine", "done",
+        "approved", "agreed", "correct", "right", "exactly", "good", "awesome",
+    ];
+    let um = user_msg.trim().to_lowercase();
+    let um_stripped = um.trim_end_matches(['.', '!', '?',' ']);
+    let is_ack = ACK_PHRASES.iter().any(|p| um_stripped == *p);
+    let both_short = um.len() < 25 && turn_text.trim().len() < 120;
+    is_ack || both_short
 }
 
 pub(crate) fn now_ms() -> u64 {
@@ -293,13 +311,26 @@ pub async fn daemon_loop(shared: Arc<DaemonShared>) {
         shared.oracle.spawn().await;
         shared.commentary.spawn().await;
 
-        // Warm up commentary in background — pay cold start before first trigger
-        let warm = shared.commentary.clone();
-        tokio::spawn(async move {
-            if let Some(_) = warm.query("Say OK.", "", 15).await {
-                println!("[commentary] warm-up complete");
-            }
-        });
+        // Warm up both pools in background — pay cold start before first trigger
+        // Skip if a session is already active to avoid competing for rate limit
+        let have_active = {
+            let st = shared.state.lock().unwrap_or_else(|e| e.into_inner());
+            !st.active_sessions.is_empty()
+        };
+        if !have_active {
+            let warm_c = shared.commentary.clone();
+            let warm_o = shared.oracle.clone();
+            tokio::spawn(async move {
+                if let Some(_) = warm_c.query("Say OK.", "", 15).await {
+                    println!("[commentary] warm-up complete");
+                }
+            });
+            tokio::spawn(async move {
+                if let Some(_) = warm_o.query("Say OK.", "", 15).await {
+                    println!("[oracle] warm-up complete");
+                }
+            });
+        }
     }
 
     // tc_batch lives outside the loop so unprocessed turn_complete events
@@ -367,9 +398,7 @@ pub async fn daemon_loop(shared: Arc<DaemonShared>) {
                     "turn_complete" => {
                         // Streaming guard: session finished streaming
                         st.active_sessions.remove(&sid);
-                        if entry["tool_count"].as_u64().unwrap_or(0) > 0 {
-                            tc_batch.insert(sid.clone(), (now, entry.clone()));
-                        }
+                        tc_batch.insert(sid.clone(), (now, entry.clone()));
                         let um = entry["user_msg"].as_str().unwrap_or("").to_string();
                         let tt = entry["turn_text"].as_str().unwrap_or("").to_string();
                         if !um.is_empty() || !tt.is_empty() {
@@ -513,11 +542,20 @@ pub async fn daemon_loop(shared: Arc<DaemonShared>) {
                     .unwrap_or_default();
                 (acts, build_persona(&st.recent_actions))
             };
-            // turn_complete always fires if it has turn_text or user_msg — don't require recent_activity
+            // turn_complete fires if it has text — recent_activity not required for chat-only turns
             let has_text = tc_entry["turn_text"].as_str().map(|s| !s.is_empty()).unwrap_or(false)
                         || tc_entry["user_msg"].as_str().map(|s| !s.is_empty()).unwrap_or(false);
             if recent_acts.is_empty() && !has_text {
-                continue;
+                tc_fired_sid = Some(tc_sid.clone()); break; // remove — nothing to say
+            }
+
+            // Richness gate: skip trivial ack/short turns — remove entry so it isn't retried for 60s
+            let um  = tc_entry["user_msg"].as_str().unwrap_or("").trim();
+            let tt  = tc_entry["turn_text"].as_str().unwrap_or("").trim();
+            let tc  = tc_entry["tool_count"].as_u64().unwrap_or(0);
+            if is_low_value_turn(um, tt, tc, !recent_acts.is_empty()) {
+                println!("[daemon] turn_complete skipped — low-value (ack/short, no tools)");
+                tc_fired_sid = Some(tc_sid.clone()); break;
             }
 
             let act_json: Vec<Value> = recent_acts.iter().rev().take(4).rev()

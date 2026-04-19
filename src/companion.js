@@ -644,7 +644,6 @@ export function setOracleResponseListener(cb) { _oracleResponseListener = cb; }
 export function addToVexilLog(state, msg) {
   addToLintLog(state, msg);
   invoke('js_log', { msg: `[vexil-reply] state:${state} "${msg?.slice(0,80)}"` }).catch(() => {});
-  // bubble suppressed — log tab is the surface
 }
 
 // ── Vexil Master output poll ──────────────────────────────────────────────────
@@ -662,7 +661,6 @@ async function pollMasterOut() {
         if (entry.msg) {
           addToLintLog('vexil', entry.msg);
           invoke('js_log', { msg: `[vexil-master] "${entry.msg?.slice(0,80)}"` }).catch(() => {});
-          // bubble suppressed — log tab is the surface
         }
       } catch { /* malformed line */ }
     }
