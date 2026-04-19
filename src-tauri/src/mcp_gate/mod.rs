@@ -9,6 +9,13 @@
 //!   ~/.local/share/pixel-terminal/anima_gate_{session}.json          — request
 //!   ~/.local/share/pixel-terminal/anima_gate_{session}_response.json — response
 //!   ~/.local/share/pixel-terminal/pixel_terminal_alive                — heartbeat
+//!
+//! P2.E: persistent "allow always" check. Before prompting the UI we consult
+//! `storage::permissions.json`; on hit, the gate auto-allows WITHOUT touching
+//! the request file. On a `{approved:true, action:"allow_always"}` response
+//! we persist a grant before replying allow.
+
+pub mod storage;
 
 use serde_json::{json, Value};
 use std::fs;
@@ -25,6 +32,7 @@ pub struct GatePaths {
     pub request: PathBuf,
     pub response: PathBuf,
     pub alive: PathBuf,
+    pub permissions: PathBuf,
 }
 
 impl GatePaths {
@@ -33,6 +41,7 @@ impl GatePaths {
             request: ipc_dir.join(format!("anima_gate_{}.json", session_id)),
             response: ipc_dir.join(format!("anima_gate_{}_response.json", session_id)),
             alive: ipc_dir.join("pixel_terminal_alive"),
+            permissions: ipc_dir.join("permissions.json"),
         }
     }
 }
@@ -138,6 +147,15 @@ pub fn handle_permission<W: Write>(
     let tool_input = arguments.get("input").cloned().unwrap_or(json!({}));
     let display = display_for(tool_name, &tool_input);
 
+    // P2.E: persistent "allow always" short-circuit. Runs BEFORE the alive
+    // check on purpose — a user-approved entry should keep working even if
+    // the UI is momentarily unreachable (e.g. window just refocused).
+    // A corrupt or unreadable permissions file returns an empty store;
+    // `is_allowed` then returns false and we fall through to the UI path.
+    if storage::is_allowed_on_disk(&paths.permissions, tool_name, &tool_input) {
+        return send(writer, build_allow(msg_id, &tool_input));
+    }
+
     if !is_terminal_alive(paths) {
         return send(writer, build_deny(msg_id, "Anima UI not available for approval"));
     }
@@ -154,9 +172,24 @@ pub fn handle_permission<W: Write>(
         let id = resp.get("id").and_then(|v| v.as_str()).unwrap_or("");
         if id != req_id { continue; }
         let approved = resp.get("approved").and_then(|v| v.as_bool()).unwrap_or(false);
+        let action = resp.get("action").and_then(|v| v.as_str()).unwrap_or("");
         let _ = fs::remove_file(&paths.response);
         let _ = fs::remove_file(&paths.request);
         if approved {
+            // P2.E: persist on allow_always. Persistence failure is logged
+            // via stderr but does NOT block this single-call allow — a write
+            // race on permissions.json shouldn't cost the user the decision
+            // they just made. Next session's modal will ask again.
+            if action == "allow_always" {
+                if let Err(e) = storage::grant_on_disk(
+                    &paths.permissions,
+                    tool_name,
+                    &tool_input,
+                    storage::DEFAULT_TTL_SECS,
+                ) {
+                    eprintln!("mcp_gate: grant_on_disk failed: {}", e);
+                }
+            }
             return send(writer, build_allow(msg_id, &tool_input));
         } else {
             return send(writer, build_deny(msg_id, "User denied"));
@@ -503,6 +536,135 @@ mod tests {
 
         // Request file should be cleaned up on timeout
         assert!(!paths.request.exists(), "request file should be removed on timeout");
+    }
+
+    // ── P2.E — allow-always persistence integration ─────────────────────
+
+    #[test]
+    fn handle_permission_short_circuits_on_disk_allow_always() {
+        let (_dir, paths) = tmp_paths();
+        // NO alive file and NO response-writing thread. If the short-circuit
+        // is working, we never consult alive and never write the request.
+        let tool_input = json!({ "command": "ls" });
+        storage::grant_on_disk(
+            &paths.permissions, "Bash", &tool_input, storage::DEFAULT_TTL_SECS,
+        ).unwrap();
+
+        let mut out = Vec::new();
+        handle_permission(
+            &mut out,
+            &json!(10),
+            &json!({ "tool_name": "Bash", "input": &tool_input }),
+            &paths,
+            50, 1,
+        ).unwrap();
+
+        let text = String::from_utf8(out).unwrap();
+        let resp: Value = serde_json::from_str(text.trim()).unwrap();
+        let inner: Value = serde_json::from_str(
+            resp["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(inner["behavior"], "allow");
+        assert_eq!(inner["updatedInput"]["command"], "ls");
+        // Proof we didn't go through the UI path:
+        assert!(!paths.request.exists(), "no UI request should have been written");
+    }
+
+    #[test]
+    fn handle_permission_allow_always_persists_on_approval() {
+        let (_dir, paths) = tmp_paths();
+        fs::write(&paths.alive, "x").unwrap();
+
+        // UI thread: on seeing the request, reply approved + action=allow_always.
+        let req_path = paths.request.clone();
+        let resp_path = paths.response.clone();
+        let ui = thread::spawn(move || {
+            for _ in 0..50 {
+                if let Ok(raw) = fs::read_to_string(&req_path) {
+                    if let Ok(req) = serde_json::from_str::<Value>(&raw) {
+                        let id = req["id"].as_str().unwrap().to_string();
+                        fs::write(&resp_path, serde_json::to_string(&json!({
+                            "id": id, "approved": true, "action": "allow_always",
+                        })).unwrap()).unwrap();
+                        return;
+                    }
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+        });
+
+        let tool_input = json!({ "command": "ls" });
+        let mut out = Vec::new();
+        handle_permission(
+            &mut out,
+            &json!(11),
+            &json!({ "tool_name": "Bash", "input": &tool_input }),
+            &paths,
+            20, 5,
+        ).unwrap();
+        ui.join().unwrap();
+
+        // The allow reply went out.
+        let text = String::from_utf8(out).unwrap();
+        let resp: Value = serde_json::from_str(text.trim()).unwrap();
+        let inner: Value = serde_json::from_str(
+            resp["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(inner["behavior"], "allow");
+
+        // And the grant is now persisted.
+        assert!(storage::is_allowed_on_disk(&paths.permissions, "Bash", &tool_input));
+
+        // Second identical call: no UI thread this time, no alive even — must short-circuit.
+        fs::remove_file(&paths.alive).unwrap();
+        let mut out2 = Vec::new();
+        handle_permission(
+            &mut out2,
+            &json!(12),
+            &json!({ "tool_name": "Bash", "input": &tool_input }),
+            &paths,
+            50, 1,
+        ).unwrap();
+        let text2 = String::from_utf8(out2).unwrap();
+        let resp2: Value = serde_json::from_str(text2.trim()).unwrap();
+        let inner2: Value = serde_json::from_str(
+            resp2["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(inner2["behavior"], "allow");
+    }
+
+    #[test]
+    fn handle_permission_allow_once_does_not_persist() {
+        let (_dir, paths) = tmp_paths();
+        fs::write(&paths.alive, "x").unwrap();
+
+        let req_path = paths.request.clone();
+        let resp_path = paths.response.clone();
+        let ui = thread::spawn(move || {
+            for _ in 0..50 {
+                if let Ok(raw) = fs::read_to_string(&req_path) {
+                    if let Ok(req) = serde_json::from_str::<Value>(&raw) {
+                        let id = req["id"].as_str().unwrap().to_string();
+                        fs::write(&resp_path, serde_json::to_string(&json!({
+                            "id": id, "approved": true, "action": "allow_once",
+                        })).unwrap()).unwrap();
+                        return;
+                    }
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+        });
+
+        let tool_input = json!({ "command": "ls" });
+        let mut out = Vec::new();
+        handle_permission(
+            &mut out,
+            &json!(13),
+            &json!({ "tool_name": "Bash", "input": &tool_input }),
+            &paths,
+            20, 5,
+        ).unwrap();
+        ui.join().unwrap();
+
+        // Not persisted — the next call must still require UI.
+        assert!(!storage::is_allowed_on_disk(&paths.permissions, "Bash", &tool_input));
     }
 }
 

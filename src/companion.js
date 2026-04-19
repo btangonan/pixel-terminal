@@ -420,12 +420,11 @@ async function writeAnimaGateResponse(action) {
     });
     invoke('js_log', { msg: `[anima-gate] response action=${action} approved=${approved}` }).catch(() => {});
 
-    // P2.E will persist allow_always to permissions.json.
-    // P2.G will consume deny_pause to pause the session supervisor.
-    // For now we log intent so the signal is observable in /tmp/pixel-terminal.log.
-    if (action === 'allow_always') {
-      invoke('js_log', { msg: `[anima-gate] allow_always — persistence layer pending (P2.E)` }).catch(() => {});
-    } else if (action === 'deny_pause') {
+    // P2.E: gate reads `action:"allow_always"` from the response and writes the
+    //       grant to ~/.local/share/pixel-terminal/permissions.json before replying
+    //       allow. No JS-side write needed — the gate owns the store.
+    // P2.G:  deny_pause → CustomEvent for the supervisor pause.
+    if (action === 'deny_pause') {
       invoke('js_log', { msg: `[anima-gate] deny_pause — supervisor pause pending (P2.G)` }).catch(() => {});
       document.dispatchEvent(new CustomEvent('anima:pause-session', { detail: { sessionId: sid } }));
     }
