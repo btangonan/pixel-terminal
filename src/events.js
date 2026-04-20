@@ -7,7 +7,7 @@ import { updateSessionCard } from './cards.js';
 import { pxLog } from './logger.js';
 import { addToVexilLog, getBuddyTrigger, triggerAsciiAction } from './companion.js';
 import { accrueNimForSession } from './nim.js';
-import { writeTaskLedger } from './session-lifecycle.js';
+import { sendMessage, writeTaskLedger } from './session-lifecycle.js';
 import { classifyHookEvent } from './hook-events.js';
 
 // ── Model context window sizes (tokens) ───────────────────────────────
@@ -457,9 +457,17 @@ export function handleEvent(id, event) {
                 Math.max(0, s._contextTokens - s._contextBaseline)
                 / Math.max(1, (s._contextWindow || 200_000) - s._contextBaseline) * 100))
             : 0;
+          // Reject JSONL-approximated values that go backwards vs an authoritative statusline read.
+          // Context-sideband.sh uses raw token arithmetic; statusline uses Claude's used_percentage.
+          // If JSONL source computes lower than current, keep current to prevent visible backwards jump.
+          const isJSONL = sb.source === 'jsonl';
+          if (isJSONL && typeof s._authoritativePct === 'number' && sb.pct < s._authoritativePct && !s._compactionDetected) {
+            pxLog('CTX', `id:${id.slice(0,8)} JSONL ${sb.pct}% < current ${s._authoritativePct}% — skipped`);
+            return;
+          }
           s._authoritativePct = sb.pct;
-          if (sb.window) s._contextWindow = sb.window; // auto-update (future-proof for 1M)
-          pxLog('CTX', `id:${id.slice(0,8)} sideband:${sb.pct}% local:${localPct}% window:${sb.window}`);
+          if (sb.window) s._contextWindow = sb.window;
+          pxLog('CTX', `id:${id.slice(0,8)} sideband${isJSONL ? '[jsonl]' : '[statusline]'}:${sb.pct}% local:${localPct}%`);
 
           // Compaction warning: use authoritative % (compaction fires at ~95%)
           if (sb.pct >= 85 && !s._compactionWarned) {
@@ -523,36 +531,27 @@ export function handleEvent(id, event) {
         s.model = event.model || 'unknown';
         s._contextWindow = getContextWindow(s.model);
         pxLog('READY', `id:${id.slice(0,8)} model:${s.model} ctx:${s._contextWindow}`);
-        // Eagerly restore last-known % from sideband (covers reconnect to existing session)
-        readContextSideband(id).then(sb => {
-          if (!sb || typeof sb.pct !== 'number') return;
-          s._authoritativePct = sb.pct;
-          if (sb.window) s._contextWindow = sb.window;
-          updateSessionCard(id);
-        }).catch(() => {});
-        // Also try project-scoped last_context.json — persists across session UUID changes,
-        // so bar shows ~20% on very first message of a new spawn into an existing project
-        if (s.cwd) {
-          const encoded = s.cwd.replace(/^\//, '').replace(/\//g, '-');
-          const projPath = `~/.local/share/pixel-terminal/projects/-${encoded}/last_context.json`;
-          pxLog('CTX', `id:${id.slice(0,8)} project-read attempt: ${projPath}`);
-          window.__TAURI__?.core?.invoke('read_file_as_text', { path: projPath })
-            .then(raw => {
-              pxLog('CTX', `id:${id.slice(0,8)} project-read raw: ${raw ? raw.slice(0,60) : 'null'}`);
-              if (!raw) return;
-              const sb = JSON.parse(raw);
-              if (typeof sb.pct === 'number' && typeof s._authoritativePct !== 'number') {
+        // Poll for the statusline's initial context write. Statusline fires at session start
+        // but races with system.init — poll every 100ms, accept only fresh data (< 5s old).
+        // Stops as soon as a real value lands or a turn completes first.
+        ;(function pollInitialCtx(attempts) {
+          if (typeof s._authoritativePct === 'number') return;
+          if (attempts <= 0) return;
+          readContextSideband(id).then(sb => {
+            if (typeof s._authoritativePct === 'number') return;
+            if (sb && typeof sb.pct === 'number') {
+              const age = sb.ts ? Date.now() - new Date(sb.ts).getTime() : Infinity;
+              if (age < 5000) {
                 s._authoritativePct = sb.pct;
                 if (sb.window) s._contextWindow = sb.window;
-                pxLog('CTX', `id:${id.slice(0,8)} project-read applied: ${sb.pct}%`);
+                pxLog('CTX', `id:${id.slice(0,8)} sideband-init:${sb.pct}% age:${Math.round(age)}ms`);
                 updateSessionCard(id);
-              } else {
-                pxLog('CTX', `id:${id.slice(0,8)} project-read skipped: pct=${sb.pct} authPct=${s._authoritativePct}`);
+                return;
               }
-            }).catch(err => pxLog('CTX', `id:${id.slice(0,8)} project-read error: ${err?.message || err}`));
-        } else {
-          pxLog('CTX', `id:${id.slice(0,8)} project-read skipped: no cwd`);
-        }
+            }
+            setTimeout(() => pollInitialCtx(attempts - 1), 100);
+          }).catch(() => setTimeout(() => pollInitialCtx(attempts - 1), 100));
+        }(40));
         pushMessage(id, { type: 'system-msg', text: `Ready \u00b7 ${s.model}` });
         // After ESC restart, always go idle regardless of status.
         // Otherwise: don't clobber 'working' if user queued a message before init.
@@ -561,27 +560,12 @@ export function handleEvent(id, event) {
         // Flush messages queued before Claude was ready.
         // pushMessage here so they appear AFTER "Ready" in the log.
         if (s._pendingQueue?.length && s.child) {
-          const { expandSlashCommand, warnIfUnknownCommand } = _eventDeps;
           const queue = s._pendingQueue.splice(0);
           (async () => {
-            for (const msg of queue) {
-              if (warnIfUnknownCommand(id, msg)) continue;
-              const isVexil = msg.toLowerCase().startsWith(getBuddyTrigger());
-              pushMessage(id, { type: 'user', text: msg }); // always show user message in session log
-              try {
-                const expanded = await expandSlashCommand(msg);
-                if (!s.child) break;
-                s._turnStart = Date.now();
-                s._ttft = null;
-                s._hitRateLimit = false;
-                s._vexilTurn = isVexil;
-                s._lastUserMsg = msg;
-                await s.child.write(JSON.stringify({ type: 'user', message: { role: 'user', content: expanded } }) + '\n');
-              } catch (_) {
-                pushMessage(id, { type: 'error', text: 'Failed to send \u2014 please resend your message' });
-                setStatus(id, 'idle');
-                break;
-              }
+            for (const item of queue) {
+              const msg  = typeof item === 'object' ? item.text : item;
+              const shown = typeof item === 'object' && item.shown;
+              await sendMessage(id, msg, { skipPushMessage: shown });
             }
           })();
         }

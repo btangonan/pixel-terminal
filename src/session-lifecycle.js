@@ -68,6 +68,7 @@ async function createSession(cwd, opts = {}) {
     _liveTokens: 0,
     _dotsPhase: 0,
     _pendingQueue: [],
+    _spawning: false,
     _perfHistory: [],     // rolling perf stats per turn
     _turnStart: null,     // timestamp when message sent to stdin
     _ttft: null,          // time to first token (ms)
@@ -77,8 +78,7 @@ async function createSession(cwd, opts = {}) {
   sessions.set(id, session);
   initAttachmentSession(id);
 
-  // Pre-load last-known context % from project-scoped file so the bar is non-zero
-  // on the FIRST card render (before system.init fires, before any chat).
+  // Pre-load context window size from project-scoped file (window size only).
   if (cwd) {
     const encoded = cwd.replace(/^\//, '').replace(/\//g, '-');
     try {
@@ -87,12 +87,9 @@ async function createSession(cwd, opts = {}) {
       });
       if (raw) {
         const sb = JSON.parse(raw);
-        if (typeof sb.pct === 'number') {
-          session._authoritativePct = sb.pct;
-          if (sb.window) session._contextWindow = sb.window;
-        }
+        if (sb.window) session._contextWindow = sb.window;
       }
-    } catch { /* file absent on first-ever project launch — bar starts blank, fills after turn 1 */ }
+    } catch { /* file absent on first-ever project launch */ }
   }
 
   _deps.renderSessionCard(id);
@@ -112,7 +109,8 @@ async function createSession(cwd, opts = {}) {
 
 async function spawnClaude(id) {
   const s = sessions.get(id);
-  if (!s) return;
+  if (!s || s._spawning) return;
+  s._spawning = true;
   // Refresh slash commands from disk — picks up new commands added since startup
   loadSlashCommands().catch(e => pxLog('WARN', 'slash cmd load: ' + e));
   pxLog('SPAWN', `id:${id.slice(0,8)} cwd:${s.cwd} model:${s._modelOverride||'default'} effort:${s._effortOverride||'default'} continue:${!!s._interrupted}`);
@@ -253,10 +251,13 @@ async function spawnClaude(id) {
     });
 
     const child = await cmd.spawn();
+    if (sessions.get(id) !== s) { child.kill(); s._spawning = false; return; } // session deleted during spawn
     s.child = child;
+    s._spawning = false;
     s.toolPending = {};
 
   } catch (err) {
+    s._spawning = false;
     _deps.pushMessage(id, { type: 'error', text: `Failed to start Claude Code: ${err}` });
     _deps.setStatus(id, 'error');
   }
@@ -437,10 +438,14 @@ const BUILTIN_COMMANDS = {
   },
 };
 
+function isReadyForInput(s) {
+  return !!(s.child && !s._interrupting && !s._spawning);
+}
+
 // Send a message directly to Claude without slash expansion or builtin check (used by /compact)
 async function sendMessageDirect(id, text) {
   const s = sessions.get(id);
-  if (!s?.child) return;
+  if (!s || !isReadyForInput(s)) return;
   s._workingPhase = 'thinking';
   s._turnStart = Date.now();
   s._ttft = null;
@@ -451,7 +456,7 @@ async function sendMessageDirect(id, text) {
   try { await s.child.write(line); } catch (e) { pxLog('WARN', `child write failed: ${e}`); _deps.setStatus(id, 'idle'); }
 }
 
-async function sendMessage(id, text) {
+async function sendMessage(id, text, opts = {}) {
   const s = sessions.get(id);
   if (!s || !text.trim()) return;
 
@@ -460,21 +465,24 @@ async function sendMessage(id, text) {
   // Check built-in commands first
   const builtinMatch = raw.match(/^\/(\w[\w-]*)(?:\s+([\s\S]*))?$/);
   if (builtinMatch && BUILTIN_COMMANDS[builtinMatch[1]]) {
-    _deps.pushMessage(id, { type: 'user', text: raw });
+    if (!opts.skipPushMessage) _deps.pushMessage(id, { type: 'user', text: raw });
     await BUILTIN_COMMANDS[builtinMatch[1]](id, builtinMatch[2]);
     return;
   }
 
   if (warnIfUnknownCommand(id, raw)) return;
 
-  if (!s.child) {
-    // Process still spawning — queue until Claude's stdin is ready.
-    // Claude 2.1.x does not emit system/init proactively; it emits it only after
-    // receiving the first stdin message. So messages sent after s.child is set go
-    // directly to Claude's stdin, which triggers system/init before Claude responds.
-    // Don't _pushMessage yet — show it after "Ready" so log order is correct.
-    s._pendingQueue.push(raw);
-    _deps.setStatus(id, 'working'); // badge reacts immediately
+  if (!isReadyForInput(s)) {
+    // No live process — show message immediately so it's not invisible to the user,
+    // queue for delivery once the process is ready.
+    if (!opts.skipPushMessage) _deps.pushMessage(id, { type: 'user', text: raw });
+    s._pendingQueue.push({ text: raw, shown: true });
+    _deps.setStatus(id, 'working');
+    // Auto-respawn with --continue to preserve conversation context.
+    if (!s._spawning && !s._interrupting) {
+      s._interrupted = true;
+      spawnClaude(id);
+    }
     return;
   }
 
@@ -503,7 +511,7 @@ async function sendMessage(id, text) {
   // session is busy (agents running, tool calls in progress). Each vexil message gets
   // its own immediate response via the oracle_query Tauri command.
   if (isVexilTurn) {
-    _deps.pushMessage(id, { type: 'user', text: raw });
+    if (!opts.skipPushMessage) _deps.pushMessage(id, { type: 'user', text: raw });
     pxLog('VEXIL-ORACLE', `id:${id.slice(0,8)} bypassing main stdin → oracle_query`);
     // Build conversation history from session log — gives oracle same depth as native buddy.
     // Extract user/claude message pairs, cap at last 20 turns to stay within subprocess token budget.
@@ -529,7 +537,7 @@ async function sendMessage(id, text) {
           sessions: [...sessions.values()].map(ss => ({ name: ss.name, cwd: ss.cwd })),
         });
         if (resp?.msg) {
-          addToVexilLog('vexil', resp.msg.replace(/\n/g, ' ').slice(0, 240));
+          addToVexilLog('vexil', resp.msg);
           pxLog('VEXIL-ORACLE', `id:${id.slice(0,8)} reply: "${resp.msg.slice(0, 80)}"`);
         }
       } catch (err) {
@@ -543,7 +551,7 @@ async function sendMessage(id, text) {
 
   s._vexilTurn = false;
   s._confirmedVexil = false;
-  _deps.pushMessage(id, { type: 'user', text: raw }); // always show user message in session log
+  if (!opts.skipPushMessage) _deps.pushMessage(id, { type: 'user', text: raw });
   s._workingPhase = 'thinking';
   _deps.setStatus(id, 'working');
 

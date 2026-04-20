@@ -13,14 +13,8 @@ import { companionBuddy, saveCommentaryFrequency, reloadBuddy } from './companio
 import { killSession, IDLE_STALE_MS } from './session-lifecycle.js';
 
 function getCompactionPct(s) {
-  // Prefer authoritative % from statusline sideband (API truth).
-  // Falls back to local math when sideband hasn't been read yet.
   if (typeof s._authoritativePct === 'number') return s._authoritativePct;
-  if (!s._contextTokens || !s._contextBaseline) return 0;
-  const usable = (s._contextWindow || 200_000) - s._contextBaseline;
-  if (usable <= 0) return 0;
-  const used = Math.max(0, s._contextTokens - s._contextBaseline);
-  return Math.min(100, Math.round((used / usable) * 100));
+  return null; // no authoritative data yet — caller renders gray pending state
 }
 import { renderMessageLog, updateWorkingCursor, setPinToBottom } from './messages.js';
 
@@ -38,10 +32,12 @@ const _EYE_LABELS = {
   '·': 'dot', '✦': 'star', '×': 'x', '◉': 'circle', '@': 'at', '°': 'degree',
 };
 
-let _profileCardEl = null;
-let _profileAnimId = null;
-let _oracleCardEl  = null;
-let _oracleAnimId  = null;
+let _profileCardEl   = null;
+let _profileAnimId   = null;
+let _oracleCardEl    = null;
+let _oracleAnimId    = null;
+let _oracleBlinkTimer = null;       // outer blink interval (3–6s)
+let _oracleBlinkTimerInner = null;  // 150ms eyes-open callback — tracked to prevent cross-instance races
 
 // ── Shared stat-card builder ─────────────────────────────
 // Returns { overlay, card, spritePre, footer } — caller attaches to DOM and wires animation.
@@ -259,11 +255,57 @@ export function showOracleCard(buddy) {
   _oracleCardEl = overlay;
 
   let frame = 0;
+  let _wasThinking = false;
+
+  function _renderOracleSprite(f, blinking) {
+    const eyeChar = blinking ? '-' : eye;
+    spritePre.textContent = renderFrame(species, f, eyeChar, hat).join('\n');
+  }
+
+  function _scheduleOracleBlink() {
+    clearTimeout(_oracleBlinkTimer);
+    if (!_oracleCardEl) return;  // card was closed — stop recursing
+    _oracleBlinkTimer = setTimeout(() => {
+      if (!_oracleCardEl || _wasThinking) return;  // card closed or thinking started
+      _renderOracleSprite(0, true);   // eyes closed
+      _oracleBlinkTimerInner = setTimeout(() => {
+        if (_oracleCardEl && !_wasThinking) _renderOracleSprite(0, false);  // eyes open
+        _scheduleOracleBlink();
+      }, 150);
+    }, 3000 + Math.random() * 3000);
+  }
+
+  // Oracle starts idle — show resting frame and start blink cycle.
+  _renderOracleSprite(0, false);
+  _scheduleOracleBlink();
+
   _oracleAnimId = setInterval(() => {
-    frame = (frame + 1) % 3;
-    spritePre.textContent = renderFrame(species, frame, eye, hat).join('\n');
-    // Poll thinking state every frame — no event race, works regardless of open/send order
-    spritePre.classList.toggle('thinking', !!document.body.dataset.oracleThinking);
+    const nowThinking = !!document.body.dataset.oracleThinking;
+
+    if (nowThinking && !_wasThinking) {
+      // Thinking started: suppress blink, start frame cycle + sway.
+      _wasThinking = true;
+      clearTimeout(_oracleBlinkTimer);
+      frame = 0;
+      spritePre.classList.add('thinking');
+    } else if (!nowThinking && _wasThinking) {
+      // Thinking ended: let current CSS cycle finish, then return to blink-only idle.
+      _wasThinking = false;
+      spritePre.addEventListener('animationiteration', () => {
+        spritePre.classList.remove('thinking');
+        frame = 0;
+        _renderOracleSprite(0, false);
+        _scheduleOracleBlink();
+      }, { once: true });
+      return;  // don't advance frame on the transition tick
+    }
+
+    if (_wasThinking) {
+      // Advance frame cycle while thinking.
+      frame = (frame + 1) % 3;
+      _renderOracleSprite(frame, false);
+    }
+    // When idle: blink timer owns all rendering — interval is polling-only.
   }, 500);
 
   document.addEventListener('keydown', onKey);
@@ -280,6 +322,10 @@ export function hideOracleCard() {
     clearInterval(_oracleAnimId);
     _oracleAnimId = null;
   }
+  clearTimeout(_oracleBlinkTimer);
+  clearTimeout(_oracleBlinkTimerInner);
+  _oracleBlinkTimer = null;
+  _oracleBlinkTimerInner = null;
 }
 
 // ── Re-roll confirm dialog ────────────────────────────────
@@ -537,15 +583,26 @@ export function updateSessionCard(id) {
     statusEl.style.display = '';
   }
 
+  const meterEl  = document.getElementById(`card-meter-${id}`);
   const meterFill = document.getElementById(`card-meter-fill-${id}`);
   const meterPct = document.getElementById(`card-meter-pct-${id}`);
   if (meterFill) {
     const pct = getCompactionPct(s);
-    meterFill.style.width = `${pct}%`;
-    if (pct >= 85)      meterFill.style.backgroundColor = '#e05252';
-    else if (pct >= 65) meterFill.style.backgroundColor = '#d4a843';
-    else                meterFill.style.backgroundColor = '#666666';
-    if (meterPct) meterPct.textContent = pct > 0 ? `${pct}%` : '';
+    if (pct === null) {
+      meterEl?.classList.add('meter-unknown');
+      meterFill.style.width = '0%';
+      meterFill.style.backgroundColor = '';
+      if (meterPct) { meterPct.textContent = ''; meterPct.style.color = ''; }
+    } else {
+      meterEl?.classList.remove('meter-unknown');
+      const fillColor = pct >= 85 ? 'var(--meter-danger)' : pct >= 65 ? 'var(--meter-warn)' : 'var(--meter-normal)';
+      meterFill.style.width = `${pct}%`;
+      meterFill.style.backgroundColor = fillColor;
+      if (meterPct) {
+        meterPct.textContent = pct > 0 ? `${pct}%` : '';
+        meterPct.style.color = pct > 0 ? fillColor : '';
+      }
+    }
   }
 
   const card = document.getElementById(`card-${id}`);

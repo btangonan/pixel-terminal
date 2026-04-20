@@ -52,22 +52,26 @@
   flex: 1;
   min-width: 40px;
   height: 4px;
-  background: #2a2a2a;
+  background: var(--meter-track);
   border-radius: 2px;
   overflow: hidden;
+  transition: background-color 0.3s ease;
+}
+.compaction-meter.meter-unknown {
+  background: var(--meter-unknown);
 }
 
 .compaction-meter-fill {
   height: 100%;
   width: 0%;
-  background: #666666;
+  background: var(--meter-normal);
   border-radius: 2px;
   transition: width 0.3s ease, background-color 0.3s ease;
 }
 
 .compaction-pct {
   font-size: 10px;
-  color: #666666;
+  color: var(--meter-normal);
   min-width: 28px;
 }
 
