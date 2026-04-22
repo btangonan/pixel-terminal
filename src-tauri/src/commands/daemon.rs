@@ -18,7 +18,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-use tokio::process::Command;
 use tokio::sync::Semaphore;
 use tokio::time::sleep;
 
@@ -202,18 +201,9 @@ pub(crate) fn buddy_traits(buddy: &Value) -> (String, String, String) {
 pub(crate) async fn append_out(msg: &str) {
     let path = expand_home("~/.local/share/pixel-terminal/vexil_master_out.jsonl");
     let line = format!("{}\n", serde_json::json!({"msg": msg, "ts": now_ms()}));
-    match tokio::fs::OpenOptions::new().append(true).create(true).open(&path).await {
+    match tokio::fs::OpenOptions::new().append(true).create(true).mode(0o600).open(&path).await {
         Ok(mut f) => { let _ = f.write_all(line.as_bytes()).await; }
         Err(e)    => eprintln!("[daemon] append_out error: {e}"),
-    }
-}
-
-async fn append_out_raw(entry: Value) {
-    let path = expand_home("~/.local/share/pixel-terminal/vexil_master_out.jsonl");
-    let line = format!("{}\n", entry);
-    match tokio::fs::OpenOptions::new().append(true).create(true).open(&path).await {
-        Ok(mut f) => { let _ = f.write_all(line.as_bytes()).await; }
-        Err(e)    => eprintln!("[daemon] append_out_raw error: {e}"),
     }
 }
 
@@ -253,39 +243,6 @@ async fn read_new_lines(path: &str, mut offset: u64, mut inode: u64) -> (Vec<Val
         if let Ok(v) = serde_json::from_str::<Value>(raw) { entries.push(v); }
     }
     (entries, offset, inode)
-}
-
-// ── Claude subprocess ─────────────────────────────────────────────────────────
-
-pub(crate) async fn call_claude(prompt: String, model: &str, extra_args: &[&str], timeout_secs: u64, sem: &Arc<Semaphore>) -> Option<String> {
-    let _permit = sem.acquire().await.ok()?;
-    let mut cmd = Command::new("claude");
-    cmd.arg("-p").arg("--model").arg(model);
-    for a in extra_args { cmd.arg(a); }
-    cmd.stdin(std::process::Stdio::piped())
-       .stdout(std::process::Stdio::piped())
-       .stderr(std::process::Stdio::piped());
-    let mut child = match cmd.spawn() {
-        Ok(c)  => c,
-        Err(e) => { eprintln!("[daemon] spawn error: {e}"); return None; }
-    };
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(prompt.as_bytes()).await;
-    }
-    match tokio::time::timeout(Duration::from_secs(timeout_secs), child.wait_with_output()).await {
-        Err(_)       => { eprintln!("[daemon] claude timeout ({timeout_secs}s)"); None }
-        Ok(Err(e))   => { eprintln!("[daemon] wait error: {e}"); None }
-        Ok(Ok(out))  => {
-            if out.status.success() {
-                let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                if s.is_empty() || s == "SKIP" { None } else { Some(s) }
-            } else {
-                let e = String::from_utf8_lossy(&out.stderr);
-                eprintln!("[daemon] claude rc={} stderr={}", out.status, e.chars().take(120).collect::<String>());
-                None
-            }
-        }
-    }
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────────

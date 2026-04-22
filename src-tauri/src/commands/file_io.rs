@@ -1,5 +1,6 @@
 use std::fs;
 use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
 
 /// Validate and expand a path for use in IPC file commands.
 /// Expands leading `~/`. Enforces a strict allowlist of paths the app
@@ -77,6 +78,38 @@ pub(crate) fn expand_and_validate_path(path: &str) -> Result<std::path::PathBuf,
     Ok(pb)
 }
 
+/// Redact common secret patterns from a string before writing to logs.
+/// Matches API keys, bearer tokens, JWTs, AWS keys, GitHub tokens, etc.
+/// Returns a new string with matched values replaced by `[REDACTED]`.
+pub(crate) fn redact_secrets(input: &str) -> String {
+    // Patterns: (prefix_regex, replacement)
+    // Order matters — more specific patterns first to avoid partial matches.
+    const PATTERNS: &[(&str, &str)] = &[
+        // AWS secret access keys (40 base64 chars after prefix)
+        (r"(?i)(aws_secret_access_key|aws_secret)\s*[:=]\s*[A-Za-z0-9/+=]{20,}", "[REDACTED_AWS_SECRET]"),
+        // GitHub tokens (ghp_, gho_, ghu_, ghs_, ghr_)
+        (r"gh[pousr]_[A-Za-z0-9_]{36,}", "[REDACTED_GH_TOKEN]"),
+        // Anthropic API keys
+        (r"sk-ant-[A-Za-z0-9_-]{20,}", "[REDACTED_ANTHROPIC_KEY]"),
+        // OpenAI API keys
+        (r"sk-[A-Za-z0-9_-]{20,}", "[REDACTED_API_KEY]"),
+        // Generic Bearer tokens
+        (r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]{20,}", "${1}[REDACTED_BEARER]"),
+        // JWTs (three base64url segments separated by dots)
+        (r"eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}", "[REDACTED_JWT]"),
+        // Generic secret/password/token assignments in key=value or key: value
+        (r#"(?i)(["']?(?:secret|password|passwd|token|api_key|apikey|auth)["']?\s*[:=]\s*["']?)[A-Za-z0-9/+=_-]{8,}"#, "${1}[REDACTED]"),
+    ];
+
+    let mut result = input.to_string();
+    for (pattern, replacement) in PATTERNS {
+        if let Ok(re) = regex::Regex::new(pattern) {
+            result = re.replace_all(&result, *replacement).to_string();
+        }
+    }
+    result
+}
+
 fn encode_base64(input: &[u8]) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity((input.len() + 2) / 3 * 4);
@@ -105,6 +138,17 @@ fn encode_base64(input: &[u8]) -> String {
         _ => {}
     }
     out
+}
+
+/// Write the embedded system guidance text to a temp file and return its path.
+/// Solves the bundling problem: the guidance is compiled into the binary,
+/// so it works regardless of install location or repo layout.
+#[tauri::command]
+pub fn write_system_guidance() -> Result<String, String> {
+    static GUIDANCE: &str = include_str!("../../../src/anima-system-guidance.txt");
+    let path = std::env::temp_dir().join("anima-system-guidance.txt");
+    fs::write(&path, GUIDANCE).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
 }
 
 /// Read a file as a base64-encoded string (for images/binary).
@@ -176,9 +220,10 @@ pub fn append_line_to_file(path: String, line: String) -> Result<(), String> {
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
+        .mode(0o600)
         .open(&safe)
         .map_err(|e| e.to_string())?;
-    writeln!(file, "{}", line).map_err(|e| e.to_string())
+    writeln!(file, "{}", redact_secrets(&line)).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -328,5 +373,60 @@ mod tests {
             }
             Err(e) => assert!(!e.contains("outside allowed"), "tilde expansion failed allowlist: {e}"),
         }
+    }
+
+    // ── Secret redaction ─────────────────────────────────────────────────────
+
+    #[test]
+    fn redacts_anthropic_api_key() {
+        let input = r#"{"key":"sk-ant-api03-abcdefghijklmnopqrstuvwxyz"}"#;
+        let result = redact_secrets(input);
+        assert!(!result.contains("sk-ant-"), "Anthropic key should be redacted");
+        assert!(result.contains("[REDACTED_ANTHROPIC_KEY]"));
+    }
+
+    #[test]
+    fn redacts_openai_api_key() {
+        let input = r#"token: sk-proj-abc123def456ghi789jkl012mno345"#;
+        let result = redact_secrets(input);
+        assert!(!result.contains("sk-proj-"), "OpenAI key should be redacted");
+        assert!(result.contains("[REDACTED_API_KEY]"));
+    }
+
+    #[test]
+    fn redacts_github_token() {
+        let input = "export GITHUB_TOKEN=ghp_1234567890abcdefghijklmnopqrstuvwxyz01";
+        let result = redact_secrets(input);
+        assert!(!result.contains("ghp_"), "GitHub token should be redacted");
+        assert!(result.contains("[REDACTED_GH_TOKEN]"));
+    }
+
+    #[test]
+    fn redacts_bearer_token() {
+        let input = "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U";
+        let result = redact_secrets(input);
+        assert!(!result.contains("eyJ"), "JWT should be redacted");
+    }
+
+    #[test]
+    fn redacts_generic_secret_assignment() {
+        let input = r#"password="SuperSecret123456""#;
+        let result = redact_secrets(input);
+        assert!(!result.contains("SuperSecret"), "password value should be redacted");
+    }
+
+    #[test]
+    fn preserves_normal_text() {
+        let input = r#"{"type":"tool_use","tool":"Bash","hint":"ls -la"}"#;
+        let result = redact_secrets(input);
+        assert_eq!(result, input, "normal text should be unchanged");
+    }
+
+    #[test]
+    fn redacts_aws_secret() {
+        let input = "aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+        let result = redact_secrets(input);
+        assert!(!result.contains("wJalrX"), "AWS secret should be redacted");
+        assert!(result.contains("[REDACTED_AWS_SECRET]"));
     }
 }
