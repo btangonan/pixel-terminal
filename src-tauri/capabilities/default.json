@@ -24,24 +24,6 @@
       "identifier": "shell:allow-spawn",
       "allow": [
         {
-          "name": "claude",
-          "cmd": "/opt/homebrew/bin/claude",
-          "args": true,
-          "sidecar": false
-        },
-        {
-          "name": "claude",
-          "cmd": "/usr/local/bin/claude",
-          "args": true,
-          "sidecar": false
-        },
-        {
-          "name": "claude",
-          "cmd": "/usr/bin/claude",
-          "args": true,
-          "sidecar": false
-        },
-        {
           "name": "sh",
           "cmd": "/bin/sh",
           "args": true,

@@ -1,7 +1,7 @@
 use std::fs;
 
 #[derive(serde::Serialize)]
-pub(crate) struct SlashCommand {
+pub struct SlashCommand {
     pub name: String,
     pub description: String,
     pub flags: Vec<String>,

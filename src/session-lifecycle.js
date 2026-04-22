@@ -16,6 +16,10 @@ const { Command } = window.__TAURI__.shell;
 const { open: openDialog } = window.__TAURI__.dialog;
 const { invoke } = window.__TAURI__.core;
 
+// Shell-safe single-quote escaping for sh -c argument passing.
+// 'foo' → 'foo', "it's" → 'it'"'"'s'
+function shEsc(s) { return "'" + s.replace(/'/g, "'\\''" ) + "'"; }
+
 // ── Task ledger: writes rolling task state to disk so hooks can read it ──
 // PreCompact hook snapshots this; PostCompact hook injects it as recovery context.
 // Uses Tauri's write_file_as_text command (creates parent dirs, handles ~ expansion).
@@ -187,18 +191,21 @@ async function spawnClaude(id) {
       claudeArgs.push('--permission-mode', 'bypassPermissions');
     }
     s._spawnMode = spawnMode;
-    // Inject compaction-resilience guidance (helps Claude recover after context compression)
-    // TODO: bundle as Tauri resource for distribution (currently uses home dir path)
-    let home = await window.__TAURI__.path.homeDir();
-    if (!home.endsWith('/')) home += '/';
-    const guidancePath = `${home}Projects/pixel-terminal/src/anima-system-guidance.txt`;
-    claudeArgs.push('--append-system-prompt-file', guidancePath);
+    // Inject compaction-resilience guidance (helps Claude recover after context compression).
+    // Text is compiled into the Rust binary — works on any install/fork location.
+    try {
+      const guidancePath = await invoke('write_system_guidance');
+      claudeArgs.push('--append-system-prompt-file', guidancePath);
+    } catch (e) { pxLog('WARN', `system guidance unavailable: ${e}`); }
     if (s._interrupted) { claudeArgs.push('--continue'); s._interrupted = false; }
     if (s.readOnly) claudeArgs.push('--disallowed-tools', 'Edit,Write,MultiEdit,NotebookEdit,Bash');
     if (s._modelOverride) claudeArgs.push('--model', s._modelOverride);
     if (s._effortOverride) claudeArgs.push('--effort', s._effortOverride);
     if (s._fallbackModel) claudeArgs.push('--fallback-model', s._fallbackModel);
-    const cmd = Command.create('claude', claudeArgs, { cwd: s.cwd, env: { ANIMA_SESSION: id } });
+    // Spawn claude via login shell so PATH resolution finds any install location.
+    // `exec` replaces sh with claude for proper signal propagation and PID tracking.
+    const shCmd = `exec claude ${claudeArgs.map(shEsc).join(' ')}`;
+    const cmd = Command.create('sh', ['-lc', shCmd], { cwd: s.cwd, env: { ANIMA_SESSION: id } });
 
     let _buf = '';
     cmd.stdout.on('data', (chunk) => {

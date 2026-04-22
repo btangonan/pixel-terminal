@@ -2,7 +2,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 
 #[derive(serde::Serialize)]
-pub(crate) struct SessionHistoryEntry {
+pub struct SessionHistoryEntry {
     pub session_id: String,
     pub file_path: String,
     pub file_size: u64,
@@ -14,7 +14,7 @@ pub(crate) struct SessionHistoryEntry {
 }
 
 #[derive(serde::Serialize, Debug)]
-pub(crate) struct SessionHistoryMessage {
+pub struct SessionHistoryMessage {
     pub msg_type: String,
     pub text: Option<String>,
     pub tool_name: Option<String>,

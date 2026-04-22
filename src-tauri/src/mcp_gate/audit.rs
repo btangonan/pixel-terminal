@@ -22,6 +22,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -129,7 +130,7 @@ fn append_line(path: &Path, entry: &Value) -> std::io::Result<()> {
     // O_APPEND on macOS/Linux ensures the write is serialized against
     // concurrent writers; keeping the line <4096 bytes keeps each
     // write atomic vs partial interleaving.
-    let mut f = OpenOptions::new().create(true).append(true).open(path)?;
+    let mut f = OpenOptions::new().create(true).append(true).mode(0o600).open(path)?;
     f.write_all(line.as_bytes())?;
     f.flush()
 }

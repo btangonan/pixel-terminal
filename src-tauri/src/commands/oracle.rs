@@ -13,7 +13,7 @@ use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, Mutex as TokioMutex, Notify};
 
 use super::daemon::{
-    expand_home, now_s, load_buddy, load_companion,
+    now_s, load_buddy, load_companion,
     str_val, coalesce, buddy_traits, DaemonShared, ConvoEntry,
 };
 
@@ -100,9 +100,7 @@ impl OraclePool {
             }
         });
 
-        // Drain init events (system prompts, etc.) — don't block, just clear for 2s
-        let drain_rx_ref = &rx;
-        // We can't drain rx here since we're moving it. The caller will drain on first query.
+        // Init events (system prompts, etc.) drain on first query — rx is moved into OracleProc.
 
         Some(OracleProc { stdin, rx, _child: child })
     }
@@ -223,6 +221,7 @@ async fn which_claude() -> Option<String> {
         _ => { eprintln!("[oracle] WARNING: 'claude' not on PATH"); None }
     }
 }
+
 
 // ── Oracle system-prompt builder ──────────────────────────────────────────────
 
