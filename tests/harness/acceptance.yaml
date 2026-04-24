@@ -1,0 +1,42 @@
+# acceptance.yaml — latency thresholds enforced by latency_harness.py --ci
+#
+# Values are milliseconds. Each metric has p50 and p95 bounds. The harness
+# runs each clip ≥ N times (default 5), computes percentiles, and fails the
+# CI lane if any metric exceeds its p95 bound.
+#
+# Thresholds come from the Grade-A plan (20260423_anima_voice_loop_grade_a.md).
+# Changing a threshold requires an accompanying PR with rationale.
+
+version: 1
+
+iterations_per_clip: 5            # total samples per metric = iterations × fixture_count
+warmup_runs: 1                    # discarded before measurement
+
+metrics:
+  stt_ttfb_ms:                    # STT: audio_start → first transcript token
+    p50_max: 250
+    p95_max: 500
+
+  tts_ttfb_ms:                    # TTS: text_send → first audio packet on WS
+    p50_max: 200
+    p95_max: 400
+
+  vad_endpoint_ms:                # VAD: last-speech → endpoint-detected fire
+    p50_max: 350
+    p95_max: 600
+
+  e2e_ms:                         # user_speech_end → assistant audio onset
+    p50_max: 1500
+    p95_max: 2200
+
+  bargein_flush_ms:               # user_speech_detected_during_tts → audio silent
+    p50_max: 100
+    p95_max: 200
+
+# TTS naturalness is advisory (PR-B). NISQA-lite MOS proxy; threshold 3.5.
+# On failure the CI emits a WARNING and writes `.voice_tts_selection`; it
+# does not fail the harness gate.
+
+tts_naturalness:
+  mos_min: 3.5
+  enforcement: advisory
