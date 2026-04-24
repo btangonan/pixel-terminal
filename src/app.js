@@ -16,6 +16,7 @@ import { pushMessage, updateWorkingCursor, setPinToBottom, renderMessageLog, cre
 import { handleEvent, setStatus, setEventDeps } from './events.js';
 import { renderSessionCard, updateSessionCard, setActiveSession, showEmptyState, updateFamiliarDisplay } from './cards.js';
 import { initVoice, isSettingsOpen, setSettingsOpen, settingsUpdate } from './voice.js';
+import { initOnboarding } from './onboarding.js';
 import { initAttachments } from './attachments.js';
 import {
   loadSlashCommands, getSlashCommands, showSlashMenu, hideSlashMenu,
@@ -69,6 +70,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   initVoice();
   initAttachments({ getActiveSessionId });
   initHistory();
+
+  // First-run voice setup wizard — no-ops if already completed.
+  initOnboarding();
 
   // P2.A — load persisted ANIMA_PERMISSION_MODE (bypass|default|gated). Defaults to bypass
   // until P2.G validation completes; P2.H settings UI writes this file.
