@@ -1,0 +1,155 @@
+/* onboarding.css — first-run voice setup wizard. Matches Anima terminal brutalism. */
+
+.voice-onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  font-family: 'Overpass Mono', ui-monospace, Menlo, monospace;
+  color: #fff;
+}
+
+.voice-onboarding-modal {
+  width: min(520px, 92vw);
+  background: #0a0a0a;
+  border: 1px solid #1a1a1a;
+  padding: 20px 22px 18px;
+  box-shadow: 0 0 0 1px rgba(57, 255, 20, 0.12), 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+.voice-onboarding-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 14px;
+}
+
+.voice-onboarding-header h2 {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #39ff14;
+}
+
+.voice-onboarding-skip {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 4px 6px;
+  font-family: inherit;
+}
+.voice-onboarding-skip:hover { color: #fff; }
+
+.voice-onboarding-step { display: block; }
+.voice-onboarding-step.hidden { display: none; }
+
+.voice-onboarding-step p {
+  font-size: 12px;
+  line-height: 1.55;
+  margin: 0 0 10px;
+  color: #ddd;
+}
+
+.voice-onboarding-step label {
+  display: block;
+  font-size: 11px;
+  color: #888;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.voice-onboarding-step input[type="text"] {
+  width: 100%;
+  background: #000;
+  border: 1px solid #222;
+  color: #fff;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12px;
+  box-sizing: border-box;
+}
+.voice-onboarding-step input[type="text"]:focus {
+  outline: none;
+  border-color: #39ff14;
+}
+
+.voice-onboarding-hint {
+  font-size: 11px;
+  color: #666;
+  margin: 6px 0 12px;
+}
+
+.voice-onboarding-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #ddd;
+  cursor: pointer;
+}
+.voice-onboarding-toggle input { margin: 0; cursor: pointer; }
+
+.voice-onboarding-probe {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 12px;
+}
+.voice-onboarding-probe li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #aaa;
+  padding: 4px 0;
+}
+.voice-onboarding-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #444;
+  box-shadow: 0 0 0 1px #222 inset;
+}
+.voice-onboarding-probe li.ok { color: #39ff14; }
+.voice-onboarding-probe li.ok .voice-onboarding-dot { background: #39ff14; box-shadow: 0 0 6px rgba(57, 255, 20, 0.6); }
+.voice-onboarding-probe li.bad { color: #ff4d4d; }
+.voice-onboarding-probe li.bad .voice-onboarding-dot { background: #ff4d4d; box-shadow: 0 0 6px rgba(255, 77, 77, 0.6); }
+
+.voice-onboarding-nav {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+.voice-onboarding-nav button {
+  background: #111;
+  color: #ccc;
+  border: 1px solid #333;
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.voice-onboarding-nav button:hover:not(:disabled) { border-color: #555; color: #fff; }
+.voice-onboarding-nav button[data-vo-primary] { background: #1a2b14; border-color: #39ff14; color: #39ff14; }
+.voice-onboarding-nav button[data-vo-primary]:hover:not(:disabled) { background: #223b1b; }
+.voice-onboarding-nav button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.voice-onboarding-step code {
+  background: #000;
+  padding: 1px 5px;
+  border: 1px solid #222;
+  font-size: 11px;
+  color: #39ff14;
+}
