@@ -17,6 +17,8 @@ import { handleEvent, setStatus, setEventDeps } from './events.js';
 import { renderSessionCard, updateSessionCard, setActiveSession, showEmptyState, updateFamiliarDisplay } from './cards.js';
 import { initVoice, isSettingsOpen, setSettingsOpen, settingsUpdate } from './voice.js';
 import { initOnboarding } from './onboarding.js';
+import { initBargeIn } from './bargein.js';
+import { cancelTTS } from './tts-player.js';
 import { initAttachments } from './attachments.js';
 import {
   loadSlashCommands, getSlashCommands, showSlashMenu, hideSlashMenu,
@@ -68,6 +70,9 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   loadSlashCommands();
   initVoice();
+  initBargeIn();
+  // Wire barge-in → TTS cancel. Follow-up from PR-B/PR-C cross-merge.
+  document.addEventListener('pixel:bargein', () => { try { cancelTTS(); } catch {} });
   initAttachments({ getActiveSessionId });
   initHistory();
 
