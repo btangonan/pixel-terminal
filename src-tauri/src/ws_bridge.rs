@@ -12,10 +12,14 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, Mutex};
+use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
+
+use crate::voice_protocol::{self, HandshakeResult};
 
 const WS_PORT: u16 = 9876;
 
@@ -94,6 +98,63 @@ async fn handle_client<R: tauri::Runtime>(
     };
 
     let (mut write, mut read) = ws.split();
+
+    // ── Strict voice/v1 handshake gate ────────────────────────────────────
+    // First frame MUST be a valid hello{protocol:"voice/v1", client, session_id}.
+    // Unversioned / legacy clients are rejected with an error frame + close.
+    let hello_deadline = Duration::from_millis(voice_protocol::HELLO_TIMEOUT_MS);
+    let _session_id: String = match timeout(hello_deadline, read.next()).await {
+        Ok(Some(Ok(Message::Text(text)))) => match voice_protocol::negotiate(&text) {
+            HandshakeResult::Accepted { client, session_id } => {
+                eprintln!(
+                    "[omi-bridge] Handshake OK ({peer}): client={client} session={session_id}"
+                );
+                let _ = write
+                    .send(Message::Text(voice_protocol::hello_ack()))
+                    .await;
+                session_id
+            }
+            HandshakeResult::Rejected { code, message } => {
+                eprintln!("[omi-bridge] Handshake rejected ({peer}): {code} — {message}");
+                let _ = write
+                    .send(Message::Text(voice_protocol::error_frame(&code, &message)))
+                    .await;
+                let _ = write.close().await;
+                return;
+            }
+        },
+        Ok(Some(Ok(_))) => {
+            eprintln!("[omi-bridge] Handshake failed ({peer}): non-text frame");
+            let _ = write
+                .send(Message::Text(voice_protocol::error_frame(
+                    "invalid_handshake",
+                    "first frame must be text",
+                )))
+                .await;
+            let _ = write.close().await;
+            return;
+        }
+        Ok(Some(Err(e))) => {
+            eprintln!("[omi-bridge] Handshake read error ({peer}): {e}");
+            return;
+        }
+        Ok(None) => {
+            eprintln!("[omi-bridge] Handshake failed ({peer}): stream closed before hello");
+            return;
+        }
+        Err(_) => {
+            eprintln!("[omi-bridge] Handshake timeout ({peer}): no hello within 2s");
+            let _ = write
+                .send(Message::Text(voice_protocol::error_frame(
+                    "handshake_timeout",
+                    "no hello within 2s",
+                )))
+                .await;
+            let _ = write.close().await;
+            return;
+        }
+    };
+
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
 
     // Register this client and emit omi:connected if it's the first.

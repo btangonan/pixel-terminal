@@ -3,6 +3,7 @@ use tauri::{
     Emitter, Manager,
 };
 
+pub mod voice_protocol;
 mod ws_bridge;
 use ws_bridge::{get_voice_status, ptt_release, ptt_start, set_omi_listening, set_voice_mode, switch_voice_source, sync_omi_sessions};
 
