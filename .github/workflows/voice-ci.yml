@@ -1,0 +1,107 @@
+name: Voice CI
+
+# Dual-lane matrix for the voice loop (cascade: Moonshine STT → Claude → Qwen3-TTS).
+#
+#   - "mocked"  runs on every PR on ubuntu-latest. Rust tests compile with cfg
+#     guards that short-circuit real macOS probes to unsupported reports, and
+#     Python tests use synthetic WAV fixtures. No weights downloaded, no audio
+#     hardware required.
+#
+#   - "native"  runs only on push to main or release/* branches on macos-14
+#     (Apple Silicon arm64). Exercises the real host_check probe, the latency
+#     harness in --ci mode (thresholds assert against acceptance.yaml), and
+#     the soak tests.
+#
+# See docs/ci-host-requirements.md for the full contract.
+
+on:
+  push:
+    branches: [main, 'release/**']
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: voice-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mocked:
+    name: Voice CI — mocked (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workdir: src-tauri
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Rust lib + integration tests (cfg-gated to mocked probes)
+        run: cargo test
+        working-directory: src-tauri
+
+      - name: JS unit tests (soak tests excluded)
+        run: npm test
+
+      - name: Latency harness (--ci; skips real probes, validates contract)
+        run: npm run harness:ci
+
+  native:
+    name: Voice CI — native (macos-14 / arm64)
+    # Native lane only on push to main or release/*; PRs from forks never fire
+    # this (host probes require Apple Silicon arm64).
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/'))
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workdir: src-tauri
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Rust tests (real aarch64-macos probes exercised)
+        run: cargo test
+        working-directory: src-tauri
+
+      - name: JS unit tests
+        run: npm test
+
+      - name: Latency harness (--ci, native probes)
+        run: npm run harness:ci
+
+      - name: Soak tests (SOAK=1 gate)
+        run: npm run test:soak
+        continue-on-error: true
