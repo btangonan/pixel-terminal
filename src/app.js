@@ -16,6 +16,7 @@ import { pushMessage, updateWorkingCursor, setPinToBottom, renderMessageLog, cre
 import { handleEvent, setStatus, setEventDeps } from './events.js';
 import { renderSessionCard, updateSessionCard, setActiveSession, showEmptyState, updateFamiliarDisplay } from './cards.js';
 import { initVoice, isSettingsOpen, setSettingsOpen, settingsUpdate } from './voice.js';
+import { initUISplit } from './ui-split.js';
 import { initAttachments } from './attachments.js';
 import {
   loadSlashCommands, getSlashCommands, showSlashMenu, hideSlashMenu,
@@ -67,6 +68,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   loadSlashCommands();
   initVoice();
+  initUISplit();
   initAttachments({ getActiveSessionId });
   initHistory();
 
