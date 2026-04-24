@@ -19,6 +19,7 @@ import { initVoice, isSettingsOpen, setSettingsOpen, settingsUpdate } from './vo
 import { initOnboarding } from './onboarding.js';
 import { initBargeIn } from './bargein.js';
 import { cancelTTS } from './tts-player.js';
+import { initUISplit } from './ui-split.js';
 import { initAttachments } from './attachments.js';
 import {
   loadSlashCommands, getSlashCommands, showSlashMenu, hideSlashMenu,
@@ -71,6 +72,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   loadSlashCommands();
   initVoice();
   initBargeIn();
+  initUISplit();
   // Wire barge-in → TTS cancel. Follow-up from PR-B/PR-C cross-merge.
   document.addEventListener('pixel:bargein', () => { try { cancelTTS(); } catch {} });
   initAttachments({ getActiveSessionId });
