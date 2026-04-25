@@ -7,8 +7,8 @@ import { pushMessage } from './messages.js';
 import { setActiveSession } from './cards.js';
 import { getLintLogForSession, clearLintLog, setVexilLogListener, setOracleResponseListener, companionBuddy } from './companion.js';
 import { clearSentAttachments } from './attachments.js';
+import { createTTSPlayer } from './tts-player.js';
 
-const { Command } = window.__TAURI__.shell;
 const { invoke } = window.__TAURI__.core;
 const { listen: tauriListen } = window.__TAURI__.event;
 
@@ -19,6 +19,72 @@ let voiceSource = localStorage.getItem('voiceSource') || 'mic';
 let alwaysOn = false;
 let pttActive = false;
 let settingsOpen = false;
+
+// ── TTS player (lazy, created on first successful oracle response) ──────────
+let _ttsPlayer = null;
+let _ttsInflightReqId = null;
+
+function sanitizeForTTS(text) {
+  return text
+    .replace(/['']/g, "'").replace(/[""]/g, '"')  // normalize curly quotes
+    .replace(/\*\*(.+?)\*\*/gs, '$1')              // **bold** → keep text
+    .replace(/__(.+?)__/gs, '$1')                  // __bold__ → keep text
+    .replace(/\*[^*\n]*\*/g, '')                   // *action* → remove (Vexil emotes)
+    .replace(/_[^_\n]*_/g, '')                     // _italic_ → remove
+    .replace(/^#{1,6}\s+/gm, '')                   // ## Header → strip hashes
+    .replace(/```[\s\S]*?```/g, '')                // code blocks → remove
+    .replace(/`([^`]+)`/g, '$1')                   // `inline` → keep text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')       // [label](url) → keep label
+    .replace(/^[-=*]{3,}$/gm, '')                  // horizontal rules → remove
+    .replace(/[^a-zA-Z0-9À-ɏ\s.,!?:;'"—–…%$/-]/g, ' ')  // non-speech → space
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function _ttsEnabled() {
+  const stored = localStorage.getItem('ttsEnabled');
+  // Explicit opt-out wins. Unset = default on (matches buddy.json ttsEnabled:true default).
+  if (stored === '0') return false;
+  return true;
+}
+
+async function _ensureTTSPlayer() {
+  if (_ttsPlayer) return _ttsPlayer;
+  const wsUrl = 'ws://127.0.0.1:9877';
+  _ttsPlayer = createTTSPlayer({ wsUrl, sessionId: `anima-${Date.now()}` });
+  try {
+    await _ttsPlayer.connect();
+  } catch (err) {
+    console.warn('[voice] tts connect failed:', err);
+    _ttsPlayer = null;
+    return null;
+  }
+  return _ttsPlayer;
+}
+
+export async function playTTS(text) {
+  const clean = sanitizeForTTS(text);
+  if (!_ttsEnabled() || !clean) return;
+  const player = await _ensureTTSPlayer();
+  if (!player) return;
+  // Cancel any in-flight speech before starting new — avoids overlap.
+  if (_ttsInflightReqId) player.cancel(_ttsInflightReqId);
+  _ttsInflightReqId = player.speak(clean, {
+    voice: 'Aiden',
+    onDone: () => { _ttsInflightReqId = null; },
+    onError: (err) => {
+      console.warn('[voice] tts speak failed:', err);
+      _ttsInflightReqId = null;
+    },
+  });
+}
+
+export function cancelTTS() {
+  if (_ttsPlayer && _ttsInflightReqId) {
+    _ttsPlayer.cancel(_ttsInflightReqId);
+    _ttsInflightReqId = null;
+  }
+}
 
 // ── Public getters ─────────────────────────────────────────
 export function isSettingsOpen() { return settingsOpen; }
@@ -35,13 +101,8 @@ function escapeHtml(s) {
 }
 
 function appendVoiceLog(text, ts, dispatched) {
-  if (!$.voiceLog || !text) return;
-  const entry = document.createElement('div');
-  entry.className = 'voice-entry' + (dispatched ? ' dispatched' : '');
-  entry.innerHTML = `<span class="ts">${escapeHtml(ts || '')}</span>${dispatched ? ': ' : ''}${escapeHtml(text)}`;
-  $.voiceLog.appendChild(entry);
-  while ($.voiceLog.children.length > MAX_VOICE_LOG) $.voiceLog.removeChild($.voiceLog.firstChild);
-  $.voiceLog.scrollTop = $.voiceLog.scrollHeight;
+  // Dispatched transcripts appear as oracle-user-msg via submitToOracle — skip to avoid doubling.
+  // Non-dispatched partial transcripts have no sidebar target (removed); drop silently.
 }
 
 // ── Vexil chat log ─────────────────────────────────────────
@@ -232,8 +293,16 @@ function initOraclePreChat() {
   let _thinkingEl    = null;
   let _history       = [];  // [{role, content}] rolling last 6
 
-  function setVisible() {
-    wrap.classList.add('hidden');
+  function setVisible(e) {
+    const isHybrid = document.getElementById('vexil-panel')?.classList.contains('hybrid-split');
+    if (isHybrid) {
+      wrap.classList.remove('hidden');
+      return;
+    }
+    const tab = e?.detail?.tab ?? document.querySelector('.voice-tab.active')?.dataset.vtab ?? 'vexil';
+    const hasSession = !!getActiveSessionId();
+    // Show oracle input only on the ORACLE tab with no active session
+    wrap.classList.toggle('hidden', hasSession || tab !== 'vexil');
   }
 
   const _oracleChatLog = document.getElementById('oracle-chat-log');
@@ -284,6 +353,9 @@ function initOraclePreChat() {
       _oracleChatLog?.appendChild(el);
       if (_oracleChatLog) requestAnimationFrame(() => { _oracleChatLog.scrollTop = _oracleChatLog.scrollHeight; });
 
+      // Optional voice output — no-op unless ttsEnabled=1 in localStorage.
+      playTTS(resp.msg);
+
       _history.push({ role: 'user', content: _pendingMsg });
       _history.push({ role: 'oracle', content: resp.msg });
       if (_history.length > 6) _history = _history.slice(-6);
@@ -311,6 +383,7 @@ function initOraclePreChat() {
 
   document.addEventListener('pixel:session-changed', setVisible);
   document.addEventListener('pixel:vexil-tab-changed', setVisible);
+  document.addEventListener('pixel:hybrid-toggle', setVisible);
   setVisible();
 
   // Post intro once — only after companion is ready AND a session is active
@@ -327,28 +400,38 @@ export function initVoice() {
     }
   }).catch(e => console.warn('[voice] get_voice_status failed:', e));
 
-  // Omi indicator click — launch voice bridge if not connected
+  // Omi indicator click — start sidecars via Tauri invoke
+  async function startVoiceSidecar() {
+    _showDotStatus('Starting voice...');
+    try {
+      const status = await invoke('start_voice_sidecar', { source: voiceSource });
+      if (status?.sttPortOpen || status?.stt_running || status?.sttRunning) {
+        _showDotStatus('Voice starting...');
+      } else {
+        _showDotStatus('Voice sidecar started');
+      }
+      // Open the mic gate — STT bridge blocks on start_capture before touching sounddevice.
+      await invoke('start_voice_capture').catch(e => console.warn('[voice] start_voice_capture failed:', e));
+      // Optimistically show connected — omi:connected arrives later when bridge sends voice_ready.
+      omiConnected = true;
+      _omiIndicatorUpdate();
+      return status;
+    } catch (err) {
+      console.warn('[voice] start_voice_sidecar failed:', err);
+      // Still open the mic gate — a manually-started bridge may already be connected.
+      invoke('start_voice_capture').catch(() => {});
+      _showDotStatus(String(err).includes('9876') ? 'Voice port unavailable' : 'Could not start voice');
+      return null;
+    }
+  }
+
   $.omiIndicator?.addEventListener('click', async (e) => {
     e.stopPropagation();
     if (omiConnected) {
       _showDotStatus('Voice bridge connected');
-    } else {
-      _showDotStatus('Starting mic…');
-      const home = await window.__TAURI__.path.homeDir();
-      const bridgePath = localStorage.getItem('voiceBridgePath');
-      if (!bridgePath) {
-        _showDotStatus('Set voiceBridgePath in Settings');
-        return;
-      }
-      // Validate path: reject shell metacharacters to prevent injection
-      if (/[;&|`$(){}[\]!#~]/.test(bridgePath)) {
-        _showDotStatus('Invalid bridge path');
-        return;
-      }
-      Command.create('sh', ['-c', `cd '${bridgePath.replace(/'/g, "'\\''")}' && source venv/bin/activate && python3 pixel_voice_bridge.py`]).execute().catch(() => {
-        _showDotStatus('Could not start voice bridge');
-      });
+      return;
     }
+    await startVoiceSidecar();
   });
 
   // Ctrl+Shift+O — toggle listening
@@ -389,6 +472,25 @@ export function initVoice() {
   });
 
   // CLR handled by initVexilTabs (tab-aware, capture phase)
+
+  // Sidecar lifecycle events
+  tauriListen('voice:started', (event) => {
+    _showDotStatus(`${event.payload.service.toUpperCase()} started`);
+  });
+  tauriListen('voice:stopped', () => {
+    omiConnected = false;
+    _omiIndicatorUpdate();
+  });
+  tauriListen('voice:crashed', (event) => {
+    console.warn('[voice] sidecar crashed:', event.payload);
+    _showDotStatus(`${event.payload.service.toUpperCase()} restarted`);
+  });
+  tauriListen('voice:port_unavailable', (event) => {
+    _showDotStatus(`Port ${event.payload.port} unavailable`);
+  });
+  tauriListen('voice:permission_denied', () => {
+    _showDotStatus('Microphone permission needed');
+  });
 
   // Connection events
   tauriListen('omi:connected', () => {

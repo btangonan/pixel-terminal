@@ -23,10 +23,8 @@ export function initDOM() {
   $.alwaysOnBtn = document.getElementById('always-on-btn');
   $.settingsPanel = document.getElementById('settings-panel');
   $.settingsBtn = document.getElementById('settings-btn');
-  $.voiceLog = document.getElementById('voice-log');
   $.vexilLog   = document.getElementById('vexil-log');
   $.vexilAscii = document.getElementById('vexil-ascii');
-  $.voiceLogHeader = document.getElementById('voice-log-header');
   $.aboutOverlay = document.getElementById('about-overlay');
   $.aboutClose = document.getElementById('about-close');
   $.confirmOverlay = document.getElementById('confirm-overlay');
@@ -37,7 +35,6 @@ export function initDOM() {
   $.sidebarResize = document.getElementById('sidebar-resize');
   $.sidebarHResize = document.getElementById('sidebar-h-resize');
   $.attachmentsPanel = document.getElementById('attachments-panel');
-  $.btnClearVoiceLog = document.getElementById('btn-clear-voice-log');
   $.voiceSourceBle = document.getElementById('voice-source-ble');
   $.voiceSourceMic = document.getElementById('voice-source-mic');
   $.permModeBypass = document.getElementById('perm-mode-bypass');
