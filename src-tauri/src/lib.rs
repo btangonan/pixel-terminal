@@ -6,7 +6,7 @@ use tauri::{
 
 pub mod voice_protocol;
 mod ws_bridge;
-use ws_bridge::{get_voice_status, ptt_release, ptt_start, set_omi_listening, set_voice_mode, switch_voice_source, sync_omi_sessions};
+use ws_bridge::{get_voice_status, ptt_release, ptt_start, set_omi_listening, set_voice_mode, start_voice_capture, switch_voice_source, sync_omi_sessions};
 
 pub mod commands;
 pub mod mcp_gate;
@@ -123,7 +123,8 @@ pub fn run() {
             start_voice_sidecar,
             stop_voice_sidecar,
             restart_voice_sidecar,
-            voice_sidecar_health
+            voice_sidecar_health,
+            start_voice_capture
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

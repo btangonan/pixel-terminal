@@ -385,6 +385,8 @@ export function initVoice() {
       } else {
         _showDotStatus('Voice sidecar started');
       }
+      // Open the mic gate — STT bridge blocks on start_capture before touching sounddevice.
+      invoke('start_voice_capture').catch(e => console.warn('[voice] start_voice_capture failed:', e));
       return status;
     } catch (err) {
       console.warn('[voice] start_voice_sidecar failed:', err);

@@ -24,12 +24,16 @@ use crate::voice_protocol::{self, HandshakeResult};
 const WS_PORT: u16 = 9876;
 
 /// Shared state: broadcast senders to all connected WS clients,
-/// plus the current mute and always-on flags.
+/// plus the current mute, always-on, and capture-intent flags.
 pub struct OmiBridgeState {
     pub ws_clients: Mutex<Vec<mpsc::UnboundedSender<String>>>,
     pub voice_ready_count: AtomicU32,
     pub muted: Arc<AtomicBool>,
     pub always_on: Arc<AtomicBool>,
+    /// Set to true once the frontend calls start_voice_capture.
+    /// Replayed to pixel_voice_bridge clients on every (re)connect so the mic
+    /// gate opens automatically after a sidecar restart.
+    pub capture_intent: Arc<AtomicBool>,
 }
 
 impl OmiBridgeState {
@@ -44,11 +48,13 @@ impl OmiBridgeState {
 pub fn init<R: tauri::Runtime>(app: &mut tauri::App<R>) -> Result<(), Box<dyn std::error::Error>> {
     let muted = Arc::new(AtomicBool::new(false));
     let always_on = Arc::new(AtomicBool::new(false));
+    let capture_intent = Arc::new(AtomicBool::new(false));
     app.manage(OmiBridgeState {
         ws_clients: Mutex::new(Vec::new()),
         voice_ready_count: AtomicU32::new(0),
         muted,
         always_on,
+        capture_intent,
     });
     tauri::async_runtime::spawn(server_loop(app.handle().clone()));
     Ok(())
@@ -103,7 +109,7 @@ async fn handle_client<R: tauri::Runtime>(
     // First frame MUST be a valid hello{protocol:"voice/v1", client, session_id}.
     // Unversioned / legacy clients are rejected with an error frame + close.
     let hello_deadline = Duration::from_millis(voice_protocol::HELLO_TIMEOUT_MS);
-    let _session_id: String = match timeout(hello_deadline, read.next()).await {
+    let (_session_id, is_pixel_voice_bridge): (String, bool) = match timeout(hello_deadline, read.next()).await {
         Ok(Some(Ok(Message::Text(text)))) => match voice_protocol::negotiate(&text) {
             HandshakeResult::Accepted { client, session_id } => {
                 eprintln!(
@@ -112,7 +118,8 @@ async fn handle_client<R: tauri::Runtime>(
                 let _ = write
                     .send(Message::Text(voice_protocol::hello_ack()))
                     .await;
-                session_id
+                let is_pvb = client == "pixel_voice_bridge";
+                (session_id, is_pvb)
             }
             HandshakeResult::Rejected { code, message } => {
                 eprintln!("[omi-bridge] Handshake rejected ({peer}): {code} — {message}");
@@ -178,6 +185,13 @@ async fn handle_client<R: tauri::Runtime>(
         if state.always_on.load(Ordering::SeqCst) {
             let ao_msg = serde_json::json!({ "type": "always_on" });
             let _ = tx.send(ao_msg.to_string());
+        }
+
+        // Replay start_capture to pixel_voice_bridge clients when the frontend
+        // has already called start_voice_capture (handles sidecar restarts).
+        if is_pixel_voice_bridge && state.capture_intent.load(Ordering::SeqCst) {
+            let sc_msg = serde_json::json!({ "type": "start_capture" });
+            let _ = tx.send(sc_msg.to_string());
         }
 
         // Don't emit omi:connected here — wait for voice_ready message from
@@ -323,6 +337,20 @@ pub async fn switch_voice_source(
     source: String,
 ) -> Result<(), String> {
     let msg = serde_json::json!({ "type": "switch_source", "source": source });
+    state.broadcast(&msg.to_string()).await;
+    Ok(())
+}
+
+/// Tauri command: opens the mic gate on all connected voice clients.
+/// Called from voice.js after start_voice_sidecar succeeds.
+/// Sets capture_intent=true so any pixel_voice_bridge reconnect also receives
+/// start_capture immediately (handles sidecar restarts without re-clicking).
+#[tauri::command]
+pub async fn start_voice_capture(
+    state: tauri::State<'_, OmiBridgeState>,
+) -> Result<(), String> {
+    state.capture_intent.store(true, Ordering::SeqCst);
+    let msg = serde_json::json!({ "type": "start_capture" });
     state.broadcast(&msg.to_string()).await;
     Ok(())
 }
