@@ -71,7 +71,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   loadSlashCommands();
   initVoice();
   initBargeIn();
-  initUISplit();
   // Wire barge-in → TTS cancel. Follow-up from PR-B/PR-C cross-merge.
   document.addEventListener('pixel:bargein', () => { try { cancelTTS(); } catch {} });
   initAttachments({ getActiveSessionId });

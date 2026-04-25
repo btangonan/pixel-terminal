@@ -61,6 +61,7 @@
 
 #vexil-panel.hybrid-split #oracle-pre-chat {
   grid-area: input;
+  display: flex !important;  /* override .hidden — oracle input always shows in split mode */
 }
 
 #vexil-panel.hybrid-split #attachments-panel {

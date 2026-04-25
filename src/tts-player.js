@@ -50,6 +50,9 @@ export function createTTSPlayer({
   let connectResolve = null;
   let connectReject = null;
 
+  // Fixed gain node — consistent volume regardless of TTS backend amplitude.
+  let gainNode = null;
+
   // Queue of scheduled AudioBufferSourceNode end-times so chunks play gaplessly.
   let nextStartTime = 0;
 
@@ -77,13 +80,23 @@ export function createTTSPlayer({
     return out;
   }
 
+  function _ensureGain() {
+    if (!ctx) return null;
+    if (!gainNode) {
+      gainNode = ctx.createGain();
+      gainNode.gain.value = 0.85;
+      gainNode.connect(ctx.destination);
+    }
+    return gainNode;
+  }
+
   function scheduleChunk(float32Samples) {
     if (!ctx) return;
     const buffer = ctx.createBuffer(1, float32Samples.length, sampleRate);
     buffer.copyToChannel(float32Samples, 0, 0);
     const node = ctx.createBufferSource();
     node.buffer = buffer;
-    node.connect(ctx.destination);
+    node.connect(_ensureGain() || ctx.destination);
     const startAt = Math.max(nextStartTime, ctx.currentTime);
     node.start(startAt);
     nextStartTime = startAt + buffer.duration;
@@ -98,6 +111,7 @@ export function createTTSPlayer({
       try { ctx.close(); } catch {}
     }
     ctx = audioContextFactory();
+    gainNode = null;
     resetScheduler();
   }
 
@@ -193,7 +207,7 @@ export function createTTSPlayer({
     });
   }
 
-  function speak(text, { voice = null, onDone = () => {}, onError = () => {} } = {}) {
+  function speak(text, { voice = 'Aiden', onDone = () => {}, onError = () => {} } = {}) {
     if (state !== 'ready') {
       onError(new Error(`tts-player not ready (state=${state})`));
       return null;

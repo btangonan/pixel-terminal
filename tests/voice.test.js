@@ -143,3 +143,122 @@ test('omi:disconnected event updates indicator title', async () => {
     expect(indicator.title).toContain('disconnected');
   }
 });
+
+// ── Oracle pre-chat visibility ───────────────────────────────────────────────
+
+function oraclePreChat() {
+  return document.getElementById('oracle-pre-chat');
+}
+
+function setActiveVoiceTab(tab) {
+  document.querySelectorAll('.voice-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.vtab === tab);
+  });
+}
+
+function addVoiceTabs(active = 'vexil') {
+  document.body.insertAdjacentHTML('beforeend', `
+    <button class="voice-tab" data-vtab="vexil"></button>
+    <button class="voice-tab" data-vtab="files"></button>
+  `);
+  setActiveVoiceTab(active);
+}
+
+function addHybridPanel(enabled = false) {
+  document.body.insertAdjacentHTML(
+    'beforeend',
+    `<div id="vexil-panel" class="${enabled ? 'hybrid-split' : ''}"></div>`
+  );
+}
+
+async function clearActiveSession() {
+  const session = await import('../src/session.js');
+  session.setActiveSessionId(null);
+}
+
+async function setActiveSession(id = 'test-session') {
+  const session = await import('../src/session.js');
+  session.setActiveSessionId(id);
+}
+
+test('oracle pre-chat has hidden removed on init when on vexil tab with no session', async () => {
+  await clearActiveSession();
+  const mod = await loadVoice();
+
+  mod.initVoice();
+
+  expect(oraclePreChat().classList.contains('hidden')).toBe(false);
+});
+
+test('oracle pre-chat keeps hidden on init when on non-vexil tab', async () => {
+  await clearActiveSession();
+  const mod = await loadVoice();
+
+  document.addEventListener('pixel:vexil-tab-changed', () => addVoiceTabs('files'), { once: true });
+  mod.initVoice();
+
+  expect(oraclePreChat().classList.contains('hidden')).toBe(true);
+});
+
+test('pixel:vexil-tab-changed with files tab adds hidden to oracle pre-chat', async () => {
+  await clearActiveSession();
+  const mod = await loadVoice();
+  mod.initVoice();
+
+  document.dispatchEvent(new CustomEvent('pixel:vexil-tab-changed', { detail: { tab: 'files' } }));
+
+  expect(oraclePreChat().classList.contains('hidden')).toBe(true);
+});
+
+test('pixel:vexil-tab-changed with vexil tab and no session removes hidden from oracle pre-chat', async () => {
+  await clearActiveSession();
+  const mod = await loadVoice();
+  mod.initVoice();
+
+  oraclePreChat().classList.add('hidden');
+  document.dispatchEvent(new CustomEvent('pixel:vexil-tab-changed', { detail: { tab: 'vexil' } }));
+
+  expect(oraclePreChat().classList.contains('hidden')).toBe(false);
+});
+
+test('pixel:session-changed adds hidden to oracle pre-chat when session is active', async () => {
+  await clearActiveSession();
+  const mod = await loadVoice();
+  mod.initVoice();
+
+  await setActiveSession();
+  document.dispatchEvent(new CustomEvent('pixel:session-changed', { detail: { id: 'test-session' } }));
+
+  expect(oraclePreChat().classList.contains('hidden')).toBe(true);
+});
+
+test('pixel:hybrid-toggle with enabled true removes hidden even if session exists', async () => {
+  await setActiveSession();
+  const mod = await loadVoice();
+  addHybridPanel(false);
+  mod.initVoice();
+
+  oraclePreChat().classList.add('hidden');
+  document.getElementById('vexil-panel').classList.add('hybrid-split');
+  document.dispatchEvent(new CustomEvent('pixel:hybrid-toggle', { detail: { enabled: true } }));
+
+  expect(oraclePreChat().classList.contains('hidden')).toBe(false);
+});
+
+test('pixel:hybrid-toggle with enabled false re-evaluates normal oracle pre-chat visibility', async () => {
+  await setActiveSession();
+  const mod = await loadVoice();
+  addVoiceTabs('vexil');
+  addHybridPanel(true);
+  mod.initVoice();
+  expect(oraclePreChat().classList.contains('hidden')).toBe(false);
+
+  document.getElementById('vexil-panel').classList.remove('hybrid-split');
+  document.dispatchEvent(new CustomEvent('pixel:hybrid-toggle', { detail: { enabled: false } }));
+  expect(oraclePreChat().classList.contains('hidden')).toBe(true);
+
+  await clearActiveSession();
+  setActiveVoiceTab('vexil');
+  document.dispatchEvent(new CustomEvent('pixel:hybrid-toggle', { detail: { enabled: false } }));
+  expect(oraclePreChat().classList.contains('hidden')).toBe(false);
+});

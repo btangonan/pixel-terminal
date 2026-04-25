@@ -119,11 +119,12 @@ fn spawn_child<R: Runtime>(
 
     command = match kind {
         VoiceServiceKind::Stt => command
-            .env("VOICE_STT_BACKEND", "moonshine")
+            .env("VOICE_STT_BACKEND", "mlx_whisper")
             .env("VOICE_BARGEIN_ENABLED", "0")
             .env("PYTHONUNBUFFERED", "1"),
         VoiceServiceKind::Tts => command
             .env("TTS_BACKEND", "qwen3_mlx")
+            .env("QWEN3_TTS_MODEL_ID", "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16")
             .env("PYTHONUNBUFFERED", "1"),
     };
 
@@ -308,11 +309,16 @@ pub async fn start_voice_sidecar<R: Runtime + 'static>(
     if source == "ble" { stt_args.push("--ble".into()); }
     let tts_args = vec!["--host".into(), "127.0.0.1".into(), "--port".into(), "9877".into()];
 
-    start_one(&app, &arc, VoiceServiceKind::Tts, tts_args).await?;
-    // Bug 3 fix: kill TTS if STT fails to avoid leaked sidecar.
+    // STT first — voice input must work regardless of TTS availability.
     if let Err(e) = start_one(&app, &arc, VoiceServiceKind::Stt, stt_args).await {
-        stop_kind(&arc, VoiceServiceKind::Tts);
         return Err(e);
+    }
+    // TTS best-effort — port busy means a manual bridge is already running; don't block STT.
+    if let Err(e) = start_one(&app, &arc, VoiceServiceKind::Tts, tts_args).await {
+        let _ = app.emit(
+            "voice:port_unavailable",
+            VoiceServiceEvent { service: "tts", port: TTS_PORT, reason: Some(e) },
+        );
     }
 
     voice_sidecar_health(state).await
@@ -358,10 +364,16 @@ pub async fn restart_voice_sidecar<R: Runtime + 'static>(
     if source == "ble" { stt_args.push("--ble".into()); }
     let tts_args = vec!["--host".into(), "127.0.0.1".into(), "--port".into(), "9877".into()];
 
-    start_one(&app, &arc, VoiceServiceKind::Tts, tts_args).await?;
+    // STT first — voice input must work regardless of TTS availability.
     if let Err(e) = start_one(&app, &arc, VoiceServiceKind::Stt, stt_args).await {
-        stop_kind(&arc, VoiceServiceKind::Tts);
         return Err(e);
+    }
+    // TTS best-effort — port busy means a manual bridge is already running.
+    if let Err(e) = start_one(&app, &arc, VoiceServiceKind::Tts, tts_args).await {
+        let _ = app.emit(
+            "voice:port_unavailable",
+            VoiceServiceEvent { service: "tts", port: TTS_PORT, reason: Some(e) },
+        );
     }
 
     voice_sidecar_health(state).await

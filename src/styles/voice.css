@@ -1,18 +1,23 @@
 /* ── Omi voice bridge indicator / toggle ─── */
+#vexil-panel {
+  position: relative;
+}
 #omi-indicator {
-  width: 7px;
-  height: 7px;
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: #555;                    /* gray = no mic connected */
-  display: inline-block;
+  display: block;
   flex-shrink: 0;
-  align-self: center;
-  margin-left: 6px;
   transition: background 0.4s;
   /* button reset */
   border: none;
   padding: 0;
   cursor: pointer;
+  z-index: 2;
 }
 #omi-indicator.connected {
   background: #d87756;              /* orange = mic/ble connected */

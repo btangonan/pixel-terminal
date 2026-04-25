@@ -24,9 +24,28 @@ let settingsOpen = false;
 let _ttsPlayer = null;
 let _ttsInflightReqId = null;
 
+function sanitizeForTTS(text) {
+  return text
+    .replace(/['']/g, "'").replace(/[""]/g, '"')  // normalize curly quotes
+    .replace(/\*\*(.+?)\*\*/gs, '$1')              // **bold** → keep text
+    .replace(/__(.+?)__/gs, '$1')                  // __bold__ → keep text
+    .replace(/\*[^*\n]*\*/g, '')                   // *action* → remove (Vexil emotes)
+    .replace(/_[^_\n]*_/g, '')                     // _italic_ → remove
+    .replace(/^#{1,6}\s+/gm, '')                   // ## Header → strip hashes
+    .replace(/```[\s\S]*?```/g, '')                // code blocks → remove
+    .replace(/`([^`]+)`/g, '$1')                   // `inline` → keep text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')       // [label](url) → keep label
+    .replace(/^[-=*]{3,}$/gm, '')                  // horizontal rules → remove
+    .replace(/[^a-zA-Z0-9À-ɏ\s.,!?:;'"—–…%$/-]/g, ' ')  // non-speech → space
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function _ttsEnabled() {
-  // Default off — user opts in via localStorage. Keeps first-run silent.
-  return localStorage.getItem('ttsEnabled') === '1';
+  const stored = localStorage.getItem('ttsEnabled');
+  // Explicit opt-out wins. Unset = default on (matches buddy.json ttsEnabled:true default).
+  if (stored === '0') return false;
+  return true;
 }
 
 async function _ensureTTSPlayer() {
@@ -44,12 +63,14 @@ async function _ensureTTSPlayer() {
 }
 
 export async function playTTS(text) {
-  if (!_ttsEnabled() || !text) return;
+  const clean = sanitizeForTTS(text);
+  if (!_ttsEnabled() || !clean) return;
   const player = await _ensureTTSPlayer();
   if (!player) return;
   // Cancel any in-flight speech before starting new — avoids overlap.
   if (_ttsInflightReqId) player.cancel(_ttsInflightReqId);
-  _ttsInflightReqId = player.speak(text, {
+  _ttsInflightReqId = player.speak(clean, {
+    voice: 'Aiden',
     onDone: () => { _ttsInflightReqId = null; },
     onError: (err) => {
       console.warn('[voice] tts speak failed:', err);
@@ -80,13 +101,8 @@ function escapeHtml(s) {
 }
 
 function appendVoiceLog(text, ts, dispatched) {
-  if (!$.voiceLog || !text) return;
-  const entry = document.createElement('div');
-  entry.className = 'voice-entry' + (dispatched ? ' dispatched' : '');
-  entry.innerHTML = `<span class="ts">${escapeHtml(ts || '')}</span>${dispatched ? ': ' : ''}${escapeHtml(text)}`;
-  $.voiceLog.appendChild(entry);
-  while ($.voiceLog.children.length > MAX_VOICE_LOG) $.voiceLog.removeChild($.voiceLog.firstChild);
-  $.voiceLog.scrollTop = $.voiceLog.scrollHeight;
+  // Dispatched transcripts appear as oracle-user-msg via submitToOracle — skip to avoid doubling.
+  // Non-dispatched partial transcripts have no sidebar target (removed); drop silently.
 }
 
 // ── Vexil chat log ─────────────────────────────────────────
@@ -277,8 +293,16 @@ function initOraclePreChat() {
   let _thinkingEl    = null;
   let _history       = [];  // [{role, content}] rolling last 6
 
-  function setVisible() {
-    wrap.classList.add('hidden');
+  function setVisible(e) {
+    const isHybrid = document.getElementById('vexil-panel')?.classList.contains('hybrid-split');
+    if (isHybrid) {
+      wrap.classList.remove('hidden');
+      return;
+    }
+    const tab = e?.detail?.tab ?? document.querySelector('.voice-tab.active')?.dataset.vtab ?? 'vexil';
+    const hasSession = !!getActiveSessionId();
+    // Show oracle input only on the ORACLE tab with no active session
+    wrap.classList.toggle('hidden', hasSession || tab !== 'vexil');
   }
 
   const _oracleChatLog = document.getElementById('oracle-chat-log');
@@ -359,6 +383,7 @@ function initOraclePreChat() {
 
   document.addEventListener('pixel:session-changed', setVisible);
   document.addEventListener('pixel:vexil-tab-changed', setVisible);
+  document.addEventListener('pixel:hybrid-toggle', setVisible);
   setVisible();
 
   // Post intro once — only after companion is ready AND a session is active
@@ -386,10 +411,15 @@ export function initVoice() {
         _showDotStatus('Voice sidecar started');
       }
       // Open the mic gate — STT bridge blocks on start_capture before touching sounddevice.
-      invoke('start_voice_capture').catch(e => console.warn('[voice] start_voice_capture failed:', e));
+      await invoke('start_voice_capture').catch(e => console.warn('[voice] start_voice_capture failed:', e));
+      // Optimistically show connected — omi:connected arrives later when bridge sends voice_ready.
+      omiConnected = true;
+      _omiIndicatorUpdate();
       return status;
     } catch (err) {
       console.warn('[voice] start_voice_sidecar failed:', err);
+      // Still open the mic gate — a manually-started bridge may already be connected.
+      invoke('start_voice_capture').catch(() => {});
       _showDotStatus(String(err).includes('9876') ? 'Voice port unavailable' : 'Could not start voice');
       return null;
     }
