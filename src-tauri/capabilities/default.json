@@ -64,6 +64,18 @@
           "cmd": "/usr/bin/python3",
           "args": true,
           "sidecar": false
+        },
+        {
+          "name": "anima-stt",
+          "cmd": "anima-stt",
+          "args": true,
+          "sidecar": true
+        },
+        {
+          "name": "anima-tts",
+          "cmd": "anima-tts",
+          "args": true,
+          "sidecar": true
         }
       ]
     },

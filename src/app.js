@@ -15,7 +15,10 @@ import {
 import { pushMessage, updateWorkingCursor, setPinToBottom, renderMessageLog, createMsgEl } from './messages.js';
 import { handleEvent, setStatus, setEventDeps } from './events.js';
 import { renderSessionCard, updateSessionCard, setActiveSession, showEmptyState, updateFamiliarDisplay } from './cards.js';
-import { initVoice, isSettingsOpen, setSettingsOpen, settingsUpdate } from './voice.js';
+import { initVoice, isSettingsOpen, setSettingsOpen, settingsUpdate, cancelTTS } from './voice.js';
+import { initOnboarding } from './onboarding.js';
+import { initBargeIn } from './bargein.js';
+import { initUISplit } from './ui-split.js';
 import { initAttachments } from './attachments.js';
 import {
   loadSlashCommands, getSlashCommands, showSlashMenu, hideSlashMenu,
@@ -67,8 +70,15 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   loadSlashCommands();
   initVoice();
+  initBargeIn();
+  initUISplit();
+  // Wire barge-in → TTS cancel. Follow-up from PR-B/PR-C cross-merge.
+  document.addEventListener('pixel:bargein', () => { try { cancelTTS(); } catch {} });
   initAttachments({ getActiveSessionId });
   initHistory();
+
+  // First-run voice setup wizard — no-ops if already completed.
+  initOnboarding();
 
   // P2.A — load persisted ANIMA_PERMISSION_MODE (bypass|default|gated). Defaults to bypass
   // until P2.G validation completes; P2.H settings UI writes this file.

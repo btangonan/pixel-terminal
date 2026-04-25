@@ -1,0 +1,68 @@
+/*
+ * voice-split.css — hybrid voice/text split-pane layout.
+ *
+ * Applied when `#vexil-panel` has `.hybrid-split`. Puts `#voice-log` on
+ * the left (40%) and oracle chat / vexil log on the right (60%), with
+ * both visible simultaneously. Default layout (stacked tabs) is unchanged
+ * when `.hybrid-split` is absent.
+ */
+
+#btn-hybrid-toggle {
+  background: transparent;
+  color: #39ff14;
+  border: 1px solid #39ff14;
+  padding: 2px 6px;
+  font-family: 'Overpass Mono', monospace;
+  font-size: 10px;
+  cursor: pointer;
+  margin-left: 4px;
+}
+
+#btn-hybrid-toggle:hover {
+  background: rgba(57, 255, 20, 0.1);
+}
+
+#btn-hybrid-toggle.active {
+  background: #39ff14;
+  color: #000;
+}
+
+#vexil-panel.hybrid-split {
+  display: grid;
+  grid-template-columns: 2fr 3fr;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    "header header"
+    "voice  chat"
+    "input  input";
+  gap: 0;
+}
+
+#vexil-panel.hybrid-split #voice-log-header {
+  grid-area: header;
+}
+
+#vexil-panel.hybrid-split #voice-log {
+  grid-area: voice;
+  display: block !important;
+  border-right: 1px solid #222;
+  overflow-y: auto;
+}
+
+#vexil-panel.hybrid-split #oracle-chat-log,
+#vexil-panel.hybrid-split #vexil-log {
+  grid-area: chat;
+  overflow-y: auto;
+}
+
+#vexil-panel.hybrid-split #vexil-bio {
+  display: none;
+}
+
+#vexil-panel.hybrid-split #oracle-pre-chat {
+  grid-area: input;
+}
+
+#vexil-panel.hybrid-split #attachments-panel {
+  display: none;
+}

@@ -7,6 +7,7 @@ import { pushMessage } from './messages.js';
 import { setActiveSession } from './cards.js';
 import { getLintLogForSession, clearLintLog, setVexilLogListener, setOracleResponseListener, companionBuddy } from './companion.js';
 import { clearSentAttachments } from './attachments.js';
+import { createTTSPlayer } from './tts-player.js';
 
 const { Command } = window.__TAURI__.shell;
 const { invoke } = window.__TAURI__.core;
@@ -19,6 +20,51 @@ let voiceSource = localStorage.getItem('voiceSource') || 'mic';
 let alwaysOn = false;
 let pttActive = false;
 let settingsOpen = false;
+
+// ── TTS player (lazy, created on first successful oracle response) ──────────
+let _ttsPlayer = null;
+let _ttsInflightReqId = null;
+
+function _ttsEnabled() {
+  // Default off — user opts in via localStorage. Keeps first-run silent.
+  return localStorage.getItem('ttsEnabled') === '1';
+}
+
+async function _ensureTTSPlayer() {
+  if (_ttsPlayer) return _ttsPlayer;
+  const wsUrl = localStorage.getItem('ttsBridgeUrl') || 'ws://127.0.0.1:9877';
+  _ttsPlayer = createTTSPlayer({ wsUrl, sessionId: `anima-${Date.now()}` });
+  try {
+    await _ttsPlayer.connect();
+  } catch (err) {
+    console.warn('[voice] tts connect failed:', err);
+    _ttsPlayer = null;
+    return null;
+  }
+  return _ttsPlayer;
+}
+
+export async function playTTS(text) {
+  if (!_ttsEnabled() || !text) return;
+  const player = await _ensureTTSPlayer();
+  if (!player) return;
+  // Cancel any in-flight speech before starting new — avoids overlap.
+  if (_ttsInflightReqId) player.cancel(_ttsInflightReqId);
+  _ttsInflightReqId = player.speak(text, {
+    onDone: () => { _ttsInflightReqId = null; },
+    onError: (err) => {
+      console.warn('[voice] tts speak failed:', err);
+      _ttsInflightReqId = null;
+    },
+  });
+}
+
+export function cancelTTS() {
+  if (_ttsPlayer && _ttsInflightReqId) {
+    _ttsPlayer.cancel(_ttsInflightReqId);
+    _ttsInflightReqId = null;
+  }
+}
 
 // ── Public getters ─────────────────────────────────────────
 export function isSettingsOpen() { return settingsOpen; }
@@ -283,6 +329,9 @@ function initOraclePreChat() {
       });
       _oracleChatLog?.appendChild(el);
       if (_oracleChatLog) requestAnimationFrame(() => { _oracleChatLog.scrollTop = _oracleChatLog.scrollHeight; });
+
+      // Optional voice output — no-op unless ttsEnabled=1 in localStorage.
+      playTTS(resp.msg);
 
       _history.push({ role: 'user', content: _pendingMsg });
       _history.push({ role: 'oracle', content: resp.msg });

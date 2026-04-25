@@ -1,10 +1,14 @@
+pub mod audio_permission;
 pub mod companion;
 pub mod daemon;
 pub mod ethology;
 pub mod file_io;
 pub mod history;
+pub mod host_check;
 pub mod mcp_config_writer;
 pub mod misc;
+pub mod model_bootstrap;
 pub mod oracle;
 pub mod patterns;
 pub mod supervisor;
+pub mod voice_services;
