@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     Emitter, Manager,
@@ -18,6 +19,10 @@ use commands::oracle::oracle_query;
 use commands::mcp_config_writer::{resolve_gate_binary, write_mcp_config};
 use commands::misc::{js_log, read_slash_command_content, read_slash_commands};
 use commands::supervisor::{supervisor_circuit_state, supervisor_record_gate_crash, supervisor_reset};
+use commands::voice_services::{
+    restart_voice_sidecar, start_voice_sidecar, stop_voice_sidecar, voice_sidecar_health,
+    VoiceServicesState,
+};
 use mcp_gate::supervisor::SupervisorState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -35,6 +40,9 @@ pub fn run() {
 
             // P2.G — supervisor state for MCP-gate crash tracking (circuit breaker).
             app.manage(SupervisorState::default());
+
+            // Voice sidecar lifecycle state.
+            app.manage(Arc::new(VoiceServicesState::default()));
 
             ws_bridge::init(app)?;
 
@@ -111,7 +119,11 @@ pub fn run() {
             resolve_gate_binary,
             supervisor_record_gate_crash,
             supervisor_circuit_state,
-            supervisor_reset
+            supervisor_reset,
+            start_voice_sidecar,
+            stop_voice_sidecar,
+            restart_voice_sidecar,
+            voice_sidecar_health
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

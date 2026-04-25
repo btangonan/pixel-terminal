@@ -1,0 +1,3 @@
+#!/bin/sh
+echo anima-stt placeholder >&2
+sleep 3600

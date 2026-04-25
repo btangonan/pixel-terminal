@@ -11,3 +11,4 @@ pub mod model_bootstrap;
 pub mod oracle;
 pub mod patterns;
 pub mod supervisor;
+pub mod voice_services;
