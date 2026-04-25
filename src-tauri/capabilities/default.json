@@ -42,30 +42,6 @@
           "sidecar": false
         },
         {
-          "name": "sh",
-          "cmd": "/bin/sh",
-          "args": true,
-          "sidecar": false
-        },
-        {
-          "name": "python3",
-          "cmd": "/opt/homebrew/bin/python3",
-          "args": true,
-          "sidecar": false
-        },
-        {
-          "name": "python3",
-          "cmd": "/usr/local/bin/python3",
-          "args": true,
-          "sidecar": false
-        },
-        {
-          "name": "python3",
-          "cmd": "/usr/bin/python3",
-          "args": true,
-          "sidecar": false
-        },
-        {
           "name": "anima-stt",
           "cmd": "anima-stt",
           "args": true,
