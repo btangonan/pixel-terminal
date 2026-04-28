@@ -76,7 +76,7 @@ Commentary runs as short background prompts via the Claude CLI, capped at 2 conc
 
 - macOS 13 Ventura or later
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
-- Node.js 18 or 20 LTS (the repo's `.nvmrc` pins 20; Node 22+ trips a known [vitest × Node Web Storage interaction](https://github.com/vitest-dev/vitest/issues/8757) that the test scripts already work around with `NODE_OPTIONS=--no-webstorage`)
+- Node.js 18 or 20 LTS (the repo's `.nvmrc` pins 20; run `nvm use` after cloning). Node 22+ trips a known [vitest × Node Web Storage interaction](https://github.com/vitest-dev/vitest/issues/8757); on those versions, run tests with `NODE_OPTIONS=--no-webstorage npm test`.
 - [Git LFS](https://git-lfs.com) for cloning (bundled voice sidecar binaries are LFS-tracked)
 
 ### Voice (optional)

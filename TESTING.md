@@ -53,7 +53,7 @@ Expected on a clean clone:
 
 The skipped tests are platform-specific (WebKit harness) or opt-in soak/PTY suites.
 
-If you see `localStorage.clear is not a function` failures, your Node is 22+ without the workaround — `npm run test` already exports `NODE_OPTIONS=--no-webstorage`, but if you're invoking vitest directly, set that env var.
+If you see `localStorage.clear is not a function` failures, your Node is 22+ and you need the vitest #8757 workaround. Either `nvm use` (picks up `.nvmrc` → Node 20, no flag needed) or run `NODE_OPTIONS=--no-webstorage npm test`. The flag is only valid on Node 22+; do not export it on Node 20.
 
 ## Known limitations
 
