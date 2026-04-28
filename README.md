@@ -76,7 +76,7 @@ Commentary runs as short background prompts via the Claude CLI, capped at 2 conc
 
 - macOS 13 Ventura or later
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
-- Node.js 18+
+- Node.js 18 or 20 LTS (run `nvm use` to pick up `.nvmrc`). Node 22+ trips a known [vitest × Node Web Storage interaction](https://github.com/vitest-dev/vitest/issues/8757); workaround: `NODE_OPTIONS=--no-webstorage npm test`.
 
 ## Getting Started
 
