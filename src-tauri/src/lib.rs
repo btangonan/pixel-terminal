@@ -5,7 +5,7 @@ use tauri::{
 };
 
 pub mod voice_protocol;
-mod ws_bridge;
+pub mod ws_bridge;
 use ws_bridge::{get_voice_status, ptt_release, ptt_start, set_omi_listening, set_voice_mode, start_voice_capture, switch_voice_source, sync_omi_sessions};
 
 pub mod commands;

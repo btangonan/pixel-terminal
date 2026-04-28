@@ -171,6 +171,7 @@ async function stageFilePath(sessionId, path) {
     }
   } catch (err) {
     console.error('[attachments] read failed:', name, err);
+    showAttachmentError(`Could not read ${name}. Attachment rejected.`);
     return;
   }
 

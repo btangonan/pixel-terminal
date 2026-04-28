@@ -238,9 +238,40 @@ export function showOracleCard(buddy) {
   }
   footer.appendChild(freqRow);
 
-  // RE-ROLL ORACLE button
+  // ── Voice picker + RE-ROLL ORACLE row ───────────────────
   const rerollOracleSlot = document.createElement('div');
   rerollOracleSlot.className = 'fc-reroll-slot fc-reroll-slot--oracle';
+
+  // Voice picker (left side) — Piper TTS voices.
+  const voiceWrap = document.createElement('label');
+  voiceWrap.className = 'fc-voice-picker';
+  const voiceLabel = document.createElement('span');
+  voiceLabel.className = 'fc-voice-label';
+  voiceLabel.textContent = 'VOICE';
+  const voiceSel = document.createElement('select');
+  voiceSel.className = 'fc-voice-select';
+  // User-approved final set (2026-04-25): Alba + Northern + Onyx.
+  const VOICES = [
+    ['en_GB-alba-medium', 'UK · Alba (F)'],
+    ['en_GB-northern_english_male-medium', 'UK · Northern (M)'],
+    ['am_onyx', 'US · Onyx (M)'],
+  ];
+  const DEFAULT_VOICE = 'en_GB-alba-medium';
+  const currentVoice = localStorage.getItem('vexilVoice') || DEFAULT_VOICE;
+  for (const [id, label] of VOICES) {
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = label;
+    if (id === currentVoice) opt.selected = true;
+    voiceSel.appendChild(opt);
+  }
+  voiceSel.addEventListener('change', () => {
+    localStorage.setItem('vexilVoice', voiceSel.value);
+  });
+  voiceWrap.appendChild(voiceLabel);
+  voiceWrap.appendChild(voiceSel);
+  rerollOracleSlot.appendChild(voiceWrap);
+
   const rerollOracleBtn = document.createElement('button');
   rerollOracleBtn.className = 'fc-reroll-btn';
   rerollOracleBtn.textContent = 'RE-ROLL ORACLE';

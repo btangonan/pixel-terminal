@@ -20,6 +20,7 @@ let _mockCmd = null;
 let _mockChild = null;
 let _spawnedArgs = [];
 let _capturedCloseHandler = null;
+const _tauriListeners = {};
 
 function resetMockProcess() {
   _spawnedArgs = [];
@@ -44,7 +45,12 @@ window.__TAURI__ = {
   core: { invoke: _mockInvoke },
   path: { homeDir: _mockHomeDir },
   dialog: { open: vi.fn() },
-  event: { listen: vi.fn().mockResolvedValue(() => {}) },
+  event: {
+    listen: vi.fn().mockImplementation(async (event, handler) => {
+      _tauriListeners[event] = handler;
+      return () => { delete _tauriListeners[event]; };
+    }),
+  },
   opener: { revealItemInDir: vi.fn() },
 };
 
@@ -130,10 +136,12 @@ function makeSession(overrides = {}) {
 beforeEach(() => {
   resetMockProcess();
   installDefaultInvoke();
+  for (const k of Object.keys(_tauriListeners)) delete _tauriListeners[k];
   window.__ANIMA_PERMISSION_MODE__ = 'bypass';
   vi.clearAllMocks();
   resetMockProcess();
   installDefaultInvoke();
+  for (const k of Object.keys(_tauriListeners)) delete _tauriListeners[k];
 });
 
 afterEach(() => {
@@ -304,7 +312,7 @@ test('gated mode with open circuit downshifts to --permission-mode default', asy
   sessionMod.sessions.delete(id);
 });
 
-test('gated mode falls back to bypass when gate setup fails', async () => {
+test('gated mode downshifts to default when gate setup fails', async () => {
   window.__ANIMA_PERMISSION_MODE__ = 'gated';
   installDefaultInvoke({ gateSetupFails: true });
   const { mod, sessionMod } = await loadLifecycle();
@@ -315,8 +323,11 @@ test('gated mode falls back to bypass when gate setup fails', async () => {
   await Promise.resolve();
 
   const args = _mockCreate.mock.calls[0]?.[1] ?? [];
-  expect(args).toContain('bypassPermissions');
+  expect(args).toContain('--permission-mode');
+  expect(args).toContain('default');
+  expect(args).not.toContain('bypassPermissions');
   expect(args).not.toContain('--strict-mcp-config');
+  expect(sessionMod.sessions.get(id)?._spawnMode).toBe('degraded');
   sessionMod.sessions.delete(id);
 });
 
@@ -414,6 +425,104 @@ test('killSession removes session from map', async () => {
 
   expect(sessionMod.sessions.has(id)).toBe(false);
   document.body.innerHTML = '';
+});
+
+test('pauseSession kills the child, clears pending work, and reports idle status', async () => {
+  const { mod, sessionMod } = await loadLifecycle();
+  const id = 'pause-test';
+  const child = { write: vi.fn(), kill: vi.fn(), pid: 4444 };
+  const deps = {
+    renderSessionCard: vi.fn(), setActiveSession: vi.fn(), pushMessage: vi.fn(),
+    setStatus: vi.fn(), handleEvent: vi.fn(), updateWorkingCursor: vi.fn(),
+    showEmptyState: vi.fn(), slashCommands: [], hideSlashMenu: vi.fn(),
+    exitHistoryView: vi.fn(), scanHistory: vi.fn(),
+  };
+  mod.setLifecycleDeps(deps);
+  sessionMod.sessions.set(id, makeSession({
+    id,
+    child,
+    status: 'working',
+    _pendingQueue: [{ text: 'queued', shown: true }],
+    toolPending: { tool1: true },
+  }));
+
+  mod.pauseSession(id);
+
+  const session = sessionMod.sessions.get(id);
+  expect(child.kill).toHaveBeenCalledTimes(1);
+  expect(session.child).toBeNull();
+  expect(session._manualClose).toBe(true);
+  expect(session._paused).toBe(true);
+  expect(session._pendingQueue).toEqual([]);
+  expect(session.toolPending).toEqual({});
+  expect(deps.setStatus).toHaveBeenCalledWith(id, 'idle');
+  expect(deps.pushMessage).toHaveBeenCalledWith(id, expect.objectContaining({
+    type: 'error',
+    text: expect.stringContaining('Permission request denied and session paused'),
+  }));
+});
+
+test('drag-drop attachment is read and injected into the next Claude message', async () => {
+  vi.resetModules();
+  resetMockProcess();
+  for (const k of Object.keys(_tauriListeners)) delete _tauriListeners[k];
+
+  document.body.innerHTML = `
+    <textarea id="msg-input"></textarea>
+    <div id="chat-view"></div>
+    <div id="drop-indicator" class="hidden"></div>
+    <div id="attachment-tokens"></div>
+    <div id="attachments-panel"></div>
+    <div id="attachment-ctx-menu" class="hidden"></div>
+  `;
+  const domMod = await import('../src/dom.js');
+  domMod.initDOM();
+  const sessionMod = await import('../src/session.js');
+  const attachments = await import('../src/attachments.js');
+  const lifecycle = await import('../src/session-lifecycle.js');
+  const id = 'drop-inject-test';
+  const write = vi.fn().mockResolvedValue(undefined);
+  sessionMod.setActiveSessionId(id);
+  sessionMod.sessions.set(id, makeSession({ id, child: { write } }));
+  sessionMod.sessionLogs.set(id, { messages: [] });
+  lifecycle.setLifecycleDeps({
+    renderSessionCard: vi.fn(), setActiveSession: vi.fn(), pushMessage: vi.fn(),
+    setStatus: vi.fn(), handleEvent: vi.fn(), updateWorkingCursor: vi.fn(),
+    showEmptyState: vi.fn(), slashCommands: [], hideSlashMenu: vi.fn(),
+    exitHistoryView: vi.fn(), scanHistory: vi.fn(),
+  });
+  _mockInvoke.mockImplementation(async (cmd, args) => {
+    if (cmd === 'get_file_size_any') {
+      expect(args.path).toBe('/tmp/notes.txt');
+      return 24;
+    }
+    if (cmd === 'read_file_as_text_any') {
+      expect(args.path).toBe('/tmp/notes.txt');
+      return 'dragged file contents';
+    }
+    if (cmd === 'read_slash_commands') return [];
+    if (cmd === 'write_file_as_text') return null;
+    if (cmd === 'js_log') return null;
+    return null;
+  });
+
+  attachments.initSession(id);
+  attachments.initAttachments({ getActiveSessionId: () => sessionMod.getActiveSessionId() });
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+  expect(_tauriListeners['tauri://drag-drop']).toEqual(expect.any(Function));
+  await _tauriListeners['tauri://drag-drop']?.({ payload: { paths: ['/tmp/notes.txt'] } });
+  expect(attachments.getStagedAttachments(id)).toHaveLength(1);
+
+  await lifecycle.sendMessage(id, 'summarize this attachment');
+
+  expect(write).toHaveBeenCalledTimes(1);
+  const frame = JSON.parse(write.mock.calls[0][0]);
+  expect(frame.message.content[0]).toEqual({ type: 'text', text: 'summarize this attachment' });
+  expect(frame.message.content[1]).toMatchObject({
+    type: 'text',
+    text: expect.stringContaining('[Attached file: notes.txt | path: /tmp/notes.txt]\ndragged file contents'),
+  });
+  expect(attachments.getStagedAttachments(id)).toEqual([]);
 });
 
 // ── NEW TESTS: lifecycle edge cases (generated by Codex gpt-5.4) ─────────────

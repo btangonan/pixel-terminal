@@ -430,7 +430,9 @@ async function loadHistorySession(entry, cardEl) {
 
 function renderHistoryMessages(messages, restoreScroll = false) {
   if (!$.messageLog || !_deps.createMsgEl) return;
-  $.messageLog.innerHTML = '';
+  $.messageLog
+    .querySelectorAll('.msg, .working-cursor, .msg-new')
+    .forEach(el => el.remove());
 
   const frag = document.createDocumentFragment();
   for (const m of messages) {

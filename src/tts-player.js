@@ -49,6 +49,7 @@ export function createTTSPlayer({
   let sampleRate = DEFAULT_SAMPLE_RATE;
   let connectResolve = null;
   let connectReject = null;
+  let handshakeTimer = null;
 
   // Fixed gain node — consistent volume regardless of TTS backend amplitude.
   let gainNode = null;
@@ -63,6 +64,29 @@ export function createTTSPlayer({
     if (state !== next) {
       state = next;
       try { onStateChange(state); } catch {}
+    }
+  }
+
+  function clearHandshakeTimer() {
+    if (handshakeTimer) {
+      clearTimeout(handshakeTimer);
+      handshakeTimer = null;
+    }
+  }
+
+  function rejectConnect(err) {
+    clearHandshakeTimer();
+    if (connectReject) {
+      connectReject(err instanceof Error ? err : new Error(String(err)));
+      connectResolve = connectReject = null;
+    }
+  }
+
+  function resolveConnect() {
+    clearHandshakeTimer();
+    if (connectResolve) {
+      connectResolve();
+      connectResolve = connectReject = null;
     }
   }
 
@@ -119,10 +143,7 @@ export function createTTSPlayer({
     if (msg.type === 'ready') {
       sampleRate = msg.sample_rate || DEFAULT_SAMPLE_RATE;
       setState('ready');
-      if (connectResolve) {
-        connectResolve();
-        connectResolve = connectReject = null;
-      }
+      resolveConnect();
       return;
     }
 
@@ -171,6 +192,13 @@ export function createTTSPlayer({
       ws = wsFactory(wsUrl);
       ws.onopen = () => {
         setState('handshaking');
+        clearHandshakeTimer();
+        handshakeTimer = setTimeout(() => {
+          const err = new Error('tts ready handshake timed out');
+          setState('error');
+          rejectConnect(err);
+          try { ws?.close(); } catch {}
+        }, 8000);
         ws.send(JSON.stringify({
           type: 'hello',
           protocol: PROTOCOL,
@@ -190,36 +218,35 @@ export function createTTSPlayer({
       };
       ws.onerror = (err) => {
         setState('error');
-        if (connectReject) {
-          connectReject(err instanceof Error ? err : new Error('ws error'));
-          connectResolve = connectReject = null;
-        }
+        rejectConnect(err instanceof Error ? err : new Error('ws error'));
       };
       ws.onclose = () => {
         setState('idle');
         // Resolve pending connect promises as error; speak() callers see
         // the state transition via onStateChange.
-        if (connectReject) {
-          connectReject(new Error('ws closed before handshake'));
-          connectResolve = connectReject = null;
-        }
+        rejectConnect(new Error('ws closed before handshake'));
       };
     });
   }
 
-  function speak(text, { voice = 'Aiden', onDone = () => {}, onError = () => {} } = {}) {
+  function speak(text, { voice = 'Aiden', segments = null, onDone = () => {}, onError = () => {} } = {}) {
     if (state !== 'ready') {
       onError(new Error(`tts-player not ready (state=${state})`));
       return null;
     }
     const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     inflight.set(requestId, { cancelled: false, onDone, onError });
-    ws.send(JSON.stringify({
+    const payload = {
       type: 'speak',
       request_id: requestId,
       text,
       voice,
-    }));
+    };
+    // Optional v2 field: an array of {text, stage:bool} for per-segment prosody
+    // (server synthesizes stage=true segments slower for a dramatic read).
+    // Server falls back to plain `text` if it doesn't understand `segments`.
+    if (Array.isArray(segments) && segments.length) payload.segments = segments;
+    ws.send(JSON.stringify(payload));
     return requestId;
   }
 
@@ -244,6 +271,7 @@ export function createTTSPlayer({
       try { ws.close(); } catch {}
       ws = null;
     }
+    clearHandshakeTimer();
     if (ctx) {
       try { ctx.close(); } catch {}
       ctx = null;

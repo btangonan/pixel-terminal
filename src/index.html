@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="styles/companion.css" />
   <link rel="stylesheet" href="styles/history.css" />
   <link rel="stylesheet" href="styles/voice.css" />
+  <link rel="stylesheet" href="styles/voice-split.css" />
   <link rel="stylesheet" href="styles/onboarding.css" />
   <!-- marked + DOMPurify loaded as UMD globals -->
   <script src="marked.umd.js"></script>
@@ -79,7 +80,16 @@
       </div>
       <div id="sidebar-h-resize"></div>
       <div id="vexil-panel">
-        <button id="omi-indicator" title="Voice bridge (disconnected)" aria-label="Toggle voice listening"></button>
+        <div id="voice-log-header">
+          <div id="voice-log-tabs">
+            <button class="voice-tab active" id="vexil-tab-btn" data-vtab="vexil">ORACLE</button>
+            <button class="voice-tab" data-vtab="files">FILES</button>
+          </div>
+          <div id="voice-log-header-right">
+            <button id="btn-clear-voice-log" title="Clear log">CLR</button>
+            <button id="omi-indicator" title="Voice bridge (disconnected)" aria-label="Toggle voice listening"></button>
+          </div>
+        </div>
         <div id="vexil-bio" class="vexil-bio">
           <div id="vexil-ascii"></div>
           <div class="vexil-bio-text">
@@ -87,6 +97,7 @@
             <div class="vexil-bio-type"></div>
           </div>
         </div>
+        <div id="voice-log" class="hidden"></div>
         <div id="oracle-chat-log"></div>
         <div id="vexil-log"></div>
         <div id="oracle-pre-chat" class="hidden">

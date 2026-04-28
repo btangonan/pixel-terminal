@@ -166,6 +166,8 @@ test('Finish with TTS toggled sets ttsEnabled=1 (no voiceBridgePath)', async () 
   expect(window.localStorage.getItem('ttsEnabled')).toBe('1');
   expect(window.localStorage.getItem('voiceBridgePath')).toBeNull();
   expect(window.localStorage.getItem('ttsBridgeUrl')).toBeNull();
+  expect(invokeFn).toHaveBeenCalledWith('start_voice_sidecar', { source: 'mic' });
+  expect(invokeFn).toHaveBeenCalledWith('voice_sidecar_health');
 });
 
 test('Finish without toggling TTS leaves ttsEnabled unset', async () => {

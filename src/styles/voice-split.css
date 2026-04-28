@@ -3,8 +3,7 @@
  *
  * Applied when `#vexil-panel` has `.hybrid-split`. Puts `#voice-log` on
  * the left (40%) and oracle chat / vexil log on the right (60%), with
- * both visible simultaneously. Default layout (stacked tabs) is unchanged
- * when `.hybrid-split` is absent.
+ * both visible simultaneously.
  */
 
 #btn-hybrid-toggle {
@@ -30,16 +29,11 @@
 #vexil-panel.hybrid-split {
   display: grid;
   grid-template-columns: 2fr 3fr;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: 1fr auto;
   grid-template-areas:
-    "header header"
     "voice  chat"
     "input  input";
   gap: 0;
-}
-
-#vexil-panel.hybrid-split #voice-log-header {
-  grid-area: header;
 }
 
 #vexil-panel.hybrid-split #voice-log {

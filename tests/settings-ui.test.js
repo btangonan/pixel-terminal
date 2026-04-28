@@ -64,10 +64,11 @@ test('paints the current mode button as active on init', async () => {
   expect(document.getElementById('perm-mode-default').classList.contains('active')).toBe(false);
 });
 
-test('falls back to bypass when window.__ANIMA_PERMISSION_MODE__ is unset or invalid', async () => {
+test('falls back to default when window.__ANIMA_PERMISSION_MODE__ is unset or invalid', async () => {
   installTauriShim([]);
   await initWithDOM(undefined);
-  expect(document.getElementById('perm-mode-bypass').classList.contains('active')).toBe(true);
+  expect(document.getElementById('perm-mode-default').classList.contains('active')).toBe(true);
+  expect(document.getElementById('perm-mode-bypass').classList.contains('active')).toBe(false);
 });
 
 test('clicking DEFAULT from gated writes settings.json and updates global + active class', async () => {

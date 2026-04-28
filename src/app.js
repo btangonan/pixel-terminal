@@ -10,7 +10,7 @@ import {
 import { renderFrame } from './ascii-sprites.js';
 import {
   spawnClaude, sendMessage, pickFolder,
-  expandSlashCommand, warnIfUnknownCommand, interruptSession, setLifecycleDeps
+  expandSlashCommand, warnIfUnknownCommand, interruptSession, pauseSession, setLifecycleDeps
 } from './session-lifecycle.js';
 import { pushMessage, updateWorkingCursor, setPinToBottom, renderMessageLog, createMsgEl } from './messages.js';
 import { handleEvent, setStatus, setEventDeps } from './events.js';
@@ -28,6 +28,23 @@ import {
 import { setHistoryDeps, initHistory, scanHistory, exitHistoryView, isHistoryActive, showHistoryFind } from './history.js';
 import { initCompanion } from './companion.js';
 import { initSettingsUI } from './settings-ui.js';
+
+export async function hydratePermissionMode(invoke = window.__TAURI__?.core?.invoke) {
+  // P2.A — load persisted ANIMA_PERMISSION_MODE (bypass|default|gated).
+  // Fail closed: unset, unreadable, invalid, or unparsable settings use default prompting.
+  window.__ANIMA_PERMISSION_MODE__ = 'default';
+  try {
+    const raw = await invoke('read_file_as_text', {
+      path: '~/.config/pixel-terminal/settings.json',
+    });
+    const cfg = JSON.parse(raw || '{}');
+    const mode = typeof cfg?.permissionMode === 'string' ? cfg.permissionMode.toLowerCase() : 'default';
+    if (mode === 'bypass' || mode === 'default' || mode === 'gated') {
+      window.__ANIMA_PERMISSION_MODE__ = mode;
+    }
+  } catch { /* no settings file yet, or invalid JSON — default prompting remains active */ }
+  return window.__ANIMA_PERMISSION_MODE__;
+}
 
 
 
@@ -70,6 +87,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   loadSlashCommands();
   initVoice();
+  initUISplit();
   initBargeIn();
   // Wire barge-in → TTS cancel. Follow-up from PR-B/PR-C cross-merge.
   document.addEventListener('pixel:bargein', () => { try { cancelTTS(); } catch {} });
@@ -79,18 +97,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   // First-run voice setup wizard — no-ops if already completed.
   initOnboarding();
 
-  // P2.A — load persisted ANIMA_PERMISSION_MODE (bypass|default|gated). Defaults to bypass
-  // until P2.G validation completes; P2.H settings UI writes this file.
-  try {
-    const { invoke } = window.__TAURI__.core;
-    const raw = await invoke('read_file_as_text', {
-      path: '~/.config/pixel-terminal/settings.json',
-    });
-    const cfg = JSON.parse(raw || '{}');
-    if (cfg && typeof cfg.permissionMode === 'string') {
-      window.__ANIMA_PERMISSION_MODE__ = cfg.permissionMode;
-    }
-  } catch { /* no settings file yet — bypass remains the default */ }
+  await hydratePermissionMode();
 
   // P2.H — wire Settings UI (reflects hydrated mode, writes back on user click)
   initSettingsUI();
@@ -106,6 +113,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
 
   initCompanion();
+
+  document.addEventListener('anima:pause-session', (e) => {
+    const id = e.detail?.sessionId;
+    if (id) pauseSession(id);
+  });
 
   // Sync oracle pre-chat height to match input-bar exactly
   function syncOracleHeight() {

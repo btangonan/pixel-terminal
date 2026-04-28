@@ -38,6 +38,13 @@ class MockAudioNode {
   }
 }
 
+class MockGainNode {
+  constructor() {
+    this.gain = { value: 1 };
+  }
+  connect() {}
+}
+
 class MockAudioContext {
   constructor() {
     this.currentTime = 0;
@@ -51,6 +58,9 @@ class MockAudioContext {
   }
   createBufferSource() {
     return new MockAudioNode(this);
+  }
+  createGain() {
+    return new MockGainNode();
   }
   close() {
     this._closed = true;
@@ -256,4 +266,27 @@ test('malformed JSON frames are ignored without throwing', async () => {
   ws._message({ type: 'ready', sample_rate: 24000, channels: 1, encoding: 'pcm_s16le', backend: 'stub' });
   await pending;
   expect(player.getState()).toBe('ready');
+});
+
+test('connect() times out if ready frame does not arrive within 8s and closes socket', async () => {
+  vi.useFakeTimers();
+  const states = [];
+  const player = makePlayer({ onStateChange: (s) => states.push(s) });
+
+  const pending = player.connect();
+  const ws = MockWebSocket.instances[0];
+  ws._open();
+  expect(ws.sent[0]).toMatchObject({ type: 'hello', protocol: 'voice/v1' });
+
+  vi.advanceTimersByTime(7999);
+  await Promise.resolve();
+  expect(player.getState()).toBe('handshaking');
+  expect(ws.readyState).toBe(1);
+
+  vi.advanceTimersByTime(1);
+  await expect(pending).rejects.toThrow('tts ready handshake timed out');
+  expect(ws.readyState).toBe(3);
+  expect(states).toContain('error');
+  expect(player.getState()).toBe('idle');
+  vi.useRealTimers();
 });

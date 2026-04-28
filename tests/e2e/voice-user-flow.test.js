@@ -47,6 +47,10 @@ class MockAudioNode {
   connect() {}
   start(at) { this._started = true; this._startAt = at; this._ctx._started.push({ at, duration: this.buffer?.duration ?? 0 }); }
 }
+class MockGainNode {
+  constructor() { this.gain = { value: 1 }; }
+  connect() {}
+}
 class MockAudioContext {
   constructor() {
     this.currentTime = 0;
@@ -58,6 +62,7 @@ class MockAudioContext {
   }
   createBuffer(channels, length, sampleRate) { return new MockAudioBuffer(channels, length, sampleRate); }
   createBufferSource() { return new MockAudioNode(this); }
+  createGain() { return new MockGainNode(); }
   close() { this._closed = true; this.state = 'closed'; }
 }
 MockAudioContext.instances = [];
@@ -113,7 +118,7 @@ function installTauriShim() {
 function mountDOM() {
   document.body.innerHTML = `
     <div id="vexil-panel">
-      <div id="voice-log-header"></div>
+      <div id="omi-indicator"></div>
       <div id="voice-log"></div>
       <div id="vexil-log"></div>
       <div id="oracle-chat-log"></div>
@@ -127,13 +132,11 @@ function mountDOM() {
         <span class="vexil-bio-type"></span>
       </div>
     </div>
-    <div id="omi-indicator"></div>
     <button id="always-on-btn"></button>
     <div id="settings-panel" class="hidden"></div>
     <button id="settings-btn"></button>
     <button id="voice-source-ble"></button>
     <button id="voice-source-mic"></button>
-    <div id="btn-clear-voice-log"></div>
   `;
 }
 
@@ -182,12 +185,13 @@ function installWSAndAudioMocks() {
 
 // ── LEG 1: default-off posture ───────────────────────────────────────────────
 
-test('leg-1: fresh localStorage → playTTS no-ops, no WS opened', async () => {
+test('leg-1: explicit TTS opt-out → playTTS no-ops, no WS opened', async () => {
   installWSAndAudioMocks();
+  localStorage.setItem('ttsEnabled', '0');
   const voice = await loadVoiceFresh();
 
-  // Fresh install: no ttsEnabled, no voiceBridgePath, no voiceOnboardingComplete.
-  expect(localStorage.getItem('ttsEnabled')).toBeNull();
+  // Explicit opt-out blocks synthesis.
+  expect(localStorage.getItem('ttsEnabled')).toBe('0');
 
   await voice.playTTS('this should never synthesize');
   expect(MockWebSocket.instances.length).toBe(0);
@@ -216,13 +220,12 @@ test('leg-2: onboarding path validation + port probes feed voice.js via localSto
   installWSAndAudioMocks();
   const onboarding = await loadOnboardingFresh();
 
-  // Valid path through wizard shell-metachar filter.
-  expect(onboarding._validatePath('/Users/brad/Projects/OmiWebhook')).toMatchObject({ ok: true });
-  expect(onboarding._validatePath('~/Projects/OmiWebhook')).toMatchObject({ ok: true });
-  expect(onboarding._validatePath('/tmp; rm -rf /')).toMatchObject({ ok: false, reason: 'unsafe_chars' });
-  expect(onboarding._validatePath('/path/with$injection')).toMatchObject({ ok: false, reason: 'unsafe_chars' });
-  expect(onboarding._validatePath('rm -rf /')).toMatchObject({ ok: false, reason: 'not_absolute' });
-  expect(onboarding._validatePath('relative/path')).toMatchObject({ ok: false, reason: 'not_absolute' });
+  // Bundled sidecar era: manual paths are no longer accepted by the wizard.
+  expect(onboarding._validatePath('')).toMatchObject({ ok: true, mode: 'bundled_sidecar' });
+  expect(onboarding._validatePath(null)).toMatchObject({ ok: true, mode: 'bundled_sidecar' });
+  expect(onboarding._validatePath('/Users/brad/Projects/OmiWebhook')).toMatchObject({ ok: false, reason: 'manual_path_removed' });
+  expect(onboarding._validatePath('~/Projects/OmiWebhook')).toMatchObject({ ok: false, reason: 'manual_path_removed' });
+  expect(onboarding._validatePath('relative/path')).toMatchObject({ ok: false, reason: 'manual_path_removed' });
 
   // Probe STT port: inject a factory that resolves open immediately.
   const openingFactory = () => {
@@ -237,17 +240,12 @@ test('leg-2: onboarding path validation + port probes feed voice.js via localSto
 
   // Simulate wizard-finish: wizard writes these keys.
   localStorage.setItem('voiceOnboardingComplete', '1');
-  localStorage.setItem('voiceBridgePath', '/Users/brad/Projects/OmiWebhook');
   localStorage.setItem('ttsEnabled', '1');
-  localStorage.setItem('ttsBridgeUrl', 'ws://127.0.0.1:9877');
 
   // voice.js should now treat TTS as opted-in.
   const voice = await loadVoiceFresh();
   expect(localStorage.getItem('ttsEnabled')).toBe('1');
-  // Soft assertion — voice.js doesn't re-read voiceBridgePath itself; the
-  // sister OmiWebhook bridge consumes it. We assert the wizard wrote it for
-  // downstream tooling.
-  expect(localStorage.getItem('voiceBridgePath')).toContain('OmiWebhook');
+  expect(localStorage.getItem('voiceBridgePath')).toBeNull();
   expect(voice).toBeTruthy();
 });
 
@@ -257,7 +255,7 @@ test('leg-3: ttsEnabled=0 → playTTS still no-ops even with bridge URL set', as
   installWSAndAudioMocks();
   localStorage.setItem('voiceBridgePath', '/Users/brad/Projects/OmiWebhook');
   localStorage.setItem('ttsBridgeUrl', 'ws://127.0.0.1:9877');
-  // ttsEnabled deliberately unset.
+  localStorage.setItem('ttsEnabled', '0');
 
   const voice = await loadVoiceFresh();
   await voice.playTTS('silence is golden');
@@ -403,13 +401,11 @@ test('leg-7: full first-run → opt-in → voice → oracle → TTS → barge-in
   expect(localStorage.getItem('voiceOnboardingComplete')).toBeNull();
   expect(localStorage.getItem('ttsEnabled')).toBeNull();
 
-  // Step B: onboarding completes — path + opt-in.
+  // Step B: bundled-sidecar onboarding completes with TTS opt-in.
   const onboarding = await loadOnboardingFresh();
-  expect(onboarding._validatePath('/Users/brad/Projects/OmiWebhook')).toMatchObject({ ok: true });
+  expect(onboarding._validatePath('')).toMatchObject({ ok: true, mode: 'bundled_sidecar' });
   localStorage.setItem('voiceOnboardingComplete', '1');
-  localStorage.setItem('voiceBridgePath', '/Users/brad/Projects/OmiWebhook');
   localStorage.setItem('ttsEnabled', '1');
-  localStorage.setItem('ttsBridgeUrl', 'ws://127.0.0.1:9877');
 
   // Step C: modules wire up.
   const voice = await loadVoiceFresh();

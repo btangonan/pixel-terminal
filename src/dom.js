@@ -20,6 +20,7 @@ export function initDOM() {
   $.chatView = document.getElementById('chat-view');
   $.slashMenu = document.getElementById('slash-menu');
   $.omiIndicator = document.getElementById('omi-indicator');
+  $.voiceLog = document.getElementById('voice-log');
   $.alwaysOnBtn = document.getElementById('always-on-btn');
   $.settingsPanel = document.getElementById('settings-panel');
   $.settingsBtn = document.getElementById('settings-btn');

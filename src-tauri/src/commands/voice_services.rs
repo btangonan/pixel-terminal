@@ -1,12 +1,14 @@
 use serde::Serialize;
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, atomic::Ordering},
     time::Duration,
 };
-use tauri::{AppHandle, Emitter, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tauri_plugin_shell::{process::{CommandChild, CommandEvent}, ShellExt};
 use tokio::{net::TcpStream, sync::mpsc, time::{sleep, timeout}};
+
+use crate::ws_bridge::OmiBridgeState;
 
 const STT_PORT: u16 = 9876;
 const TTS_PORT: u16 = 9877;
@@ -130,6 +132,7 @@ fn spawn_child<R: Runtime>(
 
     let (mut rx, child) = command.spawn().map_err(|e| {
         let message = e.to_string();
+        eprintln!("[voice] spawn FAILED for {} (gen={}): {}", kind.label(), generation, message);
         let event_name = if message.to_lowercase().contains("permission") {
             "voice:permission_denied"
         } else {
@@ -142,7 +145,9 @@ fn spawn_child<R: Runtime>(
         message
     })?;
 
+    let pid = child.pid();
     state.data.lock().unwrap().children.insert(kind, child);
+    eprintln!("[voice] spawned {} pid={} gen={}", kind.label(), pid, generation);
 
     let _ = app.emit(
         "voice:started",
@@ -156,6 +161,10 @@ fn spawn_child<R: Runtime>(
         while let Some(event) = rx.recv().await {
             match event {
                 CommandEvent::Terminated(term) => {
+                    eprintln!(
+                        "[voice] {} TERMINATED gen={} code={:?} signal={:?}",
+                        kind.label(), generation, term.code, term.signal
+                    );
                     let (should_restart, intentional, restart_args) = {
                         let mut data = state2.data.lock().unwrap();
                         data.children.remove(&kind);
@@ -213,6 +222,12 @@ fn spawn_child<R: Runtime>(
                 }
                 CommandEvent::Stderr(line) => {
                     let text = String::from_utf8_lossy(&line);
+                    // Surface sidecar stderr to the main log so spawn-time crashes are diagnosable
+                    // without DevTools. Filter the noisiest websocket frame logs.
+                    let trimmed = text.trim_end();
+                    if !trimmed.is_empty() && !trimmed.contains("> BINARY") && !trimmed.contains("< BINARY") {
+                        eprintln!("[{}] {}", kind.label(), trimmed);
+                    }
                     if text.to_lowercase().contains("permission") {
                         let _ = app2.emit(
                             "voice:permission_denied",
@@ -267,12 +282,39 @@ fn start_restart_loop<R: Runtime + 'static>(
 
 /// Bug 1 fix: only check port for TTS (it binds 9877). STT is a client of
 /// ws_bridge on 9876 — checking that port would always block valid STT startup.
+///
+/// Idempotency guard (2026-04-25): if a child for this kind is already tracked,
+/// kill it cleanly before spawning. Without this, repeat calls to start_voice_sidecar
+/// (e.g. user double-clicks the omi indicator, or onboarding + voice-tab both fire)
+/// orphaned the prior OS process — spawn_child overwrote the HashMap entry without
+/// killing the predecessor, leaving zombies fighting for ws://127.0.0.1:9876 and
+/// triggering cascading "Connection reset by peer" handshake failures.
 async fn start_one<R: Runtime + 'static>(
     app: &AppHandle<R>,
     state: &Arc<VoiceServicesState>,
     kind: VoiceServiceKind,
     args: Vec<String>,
 ) -> Result<(), String> {
+    // STT bypass: the bundled anima-stt PyInstaller binary is missing mlx_whisper
+    // and crashes on every PTT release (observed 2026-04-25). launch.command spawns
+    // pixel_voice_bridge.py via the OmiWebhook venv (which HAS mlx_whisper) and sets
+    // ANIMA_SKIP_BUNDLED_STT=1 so we never spawn the broken binary. Without this
+    // flag, both clients race for the mic and the bundled one crashes on PTT release.
+    //
+    // The earlier voice_ready_count check was too late — venv bridge only sends
+    // voice_ready AFTER start_capture broadcasts, which happens AFTER the click,
+    // so the bundled spawn fires before the venv bridge can advertise itself.
+    if kind == VoiceServiceKind::Stt && std::env::var("ANIMA_SKIP_BUNDLED_STT").as_deref() == Ok("1") {
+        eprintln!("[voice] STT spawn skipped — ANIMA_SKIP_BUNDLED_STT=1 (external pixel_voice_bridge owns the mic)");
+        return Ok(());
+    }
+
+    let already_running = state.data.lock().unwrap().children.contains_key(&kind);
+    if already_running {
+        stop_kind(state, kind);
+        sleep(Duration::from_millis(300)).await;
+    }
+
     if kind == VoiceServiceKind::Tts && port_open(kind.port()).await {
         let _ = app.emit(
             "voice:port_unavailable",
@@ -319,6 +361,24 @@ pub async fn start_voice_sidecar<R: Runtime + 'static>(
             "voice:port_unavailable",
             VoiceServiceEvent { service: "tts", port: TTS_PORT, reason: Some(e) },
         );
+    }
+
+    // Wait for anima-stt to actually connect AND signal voice_ready before
+    // returning. Otherwise the JS click handler resolves while ws_clients is
+    // still empty, the user presses PTT immediately, and ptt_start broadcasts
+    // to ZERO clients (dropped on the floor — observed 2026-04-25). Polling
+    // voice_ready_count is the right signal because anima-stt only sends it
+    // after the mic InputStream is open and ready to accept audio.
+    let omi = app.state::<OmiBridgeState>();
+    let mut waited_ms = 0u32;
+    while omi.voice_ready_count.load(Ordering::SeqCst) == 0 && waited_ms < 8000 {
+        sleep(Duration::from_millis(100)).await;
+        waited_ms += 100;
+    }
+    if omi.voice_ready_count.load(Ordering::SeqCst) == 0 {
+        eprintln!("[voice] start_voice_sidecar returning WITHOUT voice_ready after {}ms — STT may not be ready", waited_ms);
+    } else {
+        eprintln!("[voice] start_voice_sidecar — STT voice_ready after {}ms", waited_ms);
     }
 
     voice_sidecar_health(state).await

@@ -1,14 +1,13 @@
 /**
  * ui-split.js — hybrid voice/text split-pane toggle.
  *
- * Adds a toggle in the voice-log header that splits `#vexil-panel` into
- * two side-by-side columns:
+ * Keeps programmatic split-pane state for legacy callers:
  *   - Left:  live voice transcript (`#voice-log`)
  *   - Right: oracle chat / vexil log
  *
  * Pure CSS does the layout (`.hybrid-split` class on `#vexil-panel`); this
- * module just owns the toggle button, the localStorage flag, and the
- * `pixel:hybrid-toggle` DOM event so voice.js / oracle code can react
+ * module owns the localStorage flag and the `pixel:hybrid-toggle` DOM event
+ * so voice.js / oracle code can react
  * without a hard dependency.
  *
  * Default-off. Persists to `localStorage.voiceHybridEnabled` ('1' = on).
@@ -55,41 +54,13 @@ export function setHybridEnabled(on, { doc = document, storage } = {}) {
 }
 
 /**
- * initUISplit — install the toggle button into the voice-log header and
- * rehydrate state from localStorage. Safe to call multiple times; the
- * toggle button is deduped by id.
+ * initUISplit — legacy entry point. The visible split toggle was removed from
+ * the oracle card, so app startup should not inject any controls.
  *
- * Returns a teardown that removes the button + clears the split class.
+ * Returns a teardown that removes any stale toggle button.
  */
 export function initUISplit({ doc = document, storage } = {}) {
-  const header = doc.getElementById('voice-log-header');
-  if (!header) {
-    return () => {};
-  }
-  let btn = doc.getElementById(TOGGLE_ID);
-  if (!btn) {
-    btn = doc.createElement('button');
-    btn.id = TOGGLE_ID;
-    btn.className = 'hybrid-toggle-btn';
-    btn.title = 'Toggle hybrid voice/text split view';
-    btn.setAttribute('aria-label', 'Toggle hybrid voice/text split view');
-    btn.setAttribute('aria-pressed', 'false');
-    btn.textContent = '⇋';
-    header.appendChild(btn);
-  }
-
-  const onClick = () => {
-    setHybridEnabled(!isHybridEnabled(storage), { doc, storage });
-  };
-  btn.addEventListener('click', onClick);
-
-  // Rehydrate from storage on init
-  setHybridEnabled(isHybridEnabled(storage), { doc, storage });
-
   return () => {
-    btn.removeEventListener('click', onClick);
-    if (btn.parentNode) btn.parentNode.removeChild(btn);
-    const panel = doc.getElementById('vexil-panel');
-    if (panel) panel.classList.remove(SPLIT_CLASS);
+    doc.getElementById(TOGGLE_ID)?.remove();
   };
 }

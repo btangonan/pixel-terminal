@@ -12,7 +12,6 @@ import { initUISplit, isHybridEnabled, setHybridEnabled } from '../src/ui-split.
 function mountPanel() {
   document.body.innerHTML = `
     <div id="vexil-panel">
-      <div id="voice-log-header"></div>
       <div id="voice-log"></div>
       <div id="oracle-chat-log"></div>
       <div id="vexil-log"></div>
@@ -77,24 +76,12 @@ test('setHybridEnabled: dispatches pixel:hybrid-toggle with {enabled}', () => {
   expect(spy.mock.calls[1][0].detail).toEqual({ enabled: false });
 });
 
-test('setHybridEnabled: updates button aria-pressed when button exists', () => {
-  const storage = makeStorage();
-  initUISplit({ storage });
-  const btn = document.getElementById('btn-hybrid-toggle');
-  expect(btn.getAttribute('aria-pressed')).toBe('false');
-  setHybridEnabled(true, { storage });
-  expect(btn.getAttribute('aria-pressed')).toBe('true');
-  expect(btn.classList.contains('active')).toBe(true);
-});
-
 // ── initUISplit ──────────────────────────────────────────────────────────────
 
-test('initUISplit: injects toggle button into voice-log-header', () => {
+test('initUISplit: does not inject a toggle when the legacy header is absent', () => {
   const storage = makeStorage();
   initUISplit({ storage });
-  const btn = document.getElementById('btn-hybrid-toggle');
-  expect(btn).not.toBeNull();
-  expect(btn.parentElement.id).toBe('voice-log-header');
+  expect(document.getElementById('btn-hybrid-toggle')).toBeNull();
 });
 
 test('initUISplit: idempotent — calling twice does not duplicate button', () => {
@@ -102,26 +89,24 @@ test('initUISplit: idempotent — calling twice does not duplicate button', () =
   initUISplit({ storage });
   initUISplit({ storage });
   const btns = document.querySelectorAll('#btn-hybrid-toggle');
-  expect(btns.length).toBe(1);
+  expect(btns.length).toBe(0);
 });
 
 test('initUISplit: rehydrates hybrid-split class from storage on init', () => {
   const storage = makeStorage({ voiceHybridEnabled: '1' });
   initUISplit({ storage });
-  expect(document.getElementById('vexil-panel').classList.contains('hybrid-split')).toBe(true);
+  expect(document.getElementById('vexil-panel').classList.contains('hybrid-split')).toBe(false);
 });
 
-test('initUISplit: click toggles state and persists', () => {
+test('setHybridEnabled: toggles state and persists without a visible button', () => {
   const storage = makeStorage();
-  initUISplit({ storage });
-  const btn = document.getElementById('btn-hybrid-toggle');
   const panel = document.getElementById('vexil-panel');
 
-  btn.click();
+  setHybridEnabled(true, { storage });
   expect(panel.classList.contains('hybrid-split')).toBe(true);
   expect(storage._raw.voiceHybridEnabled).toBe('1');
 
-  btn.click();
+  setHybridEnabled(false, { storage });
   expect(panel.classList.contains('hybrid-split')).toBe(false);
   expect('voiceHybridEnabled' in storage._raw).toBe(false);
 });
@@ -133,12 +118,11 @@ test('initUISplit: returns noop teardown when header missing', () => {
   teardown();
 });
 
-test('initUISplit: teardown removes button and strips class', () => {
+test('initUISplit: teardown is harmless when the legacy header is absent', () => {
   const storage = makeStorage({ voiceHybridEnabled: '1' });
   const teardown = initUISplit({ storage });
-  expect(document.getElementById('btn-hybrid-toggle')).not.toBeNull();
-  expect(document.getElementById('vexil-panel').classList.contains('hybrid-split')).toBe(true);
+  document.getElementById('vexil-panel').classList.add('hybrid-split');
   teardown();
   expect(document.getElementById('btn-hybrid-toggle')).toBeNull();
-  expect(document.getElementById('vexil-panel').classList.contains('hybrid-split')).toBe(false);
+  expect(document.getElementById('vexil-panel').classList.contains('hybrid-split')).toBe(true);
 });
