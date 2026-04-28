@@ -1,0 +1,71 @@
+# Testing Anima
+
+A one-page guide for clone-and-test. Targets a fresh Mac (macOS 13+) with no prior Anima setup.
+
+## Prerequisites
+
+- macOS 13 Ventura or later (Apple Silicon recommended)
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated (`claude login`)
+- Node.js 18 or 20 LTS (use `nvm use` to pick up `.nvmrc`)
+- [Git LFS](https://git-lfs.com) (`brew install git-lfs`)
+- Rust toolchain (`rustup` — only required if running `cargo test` or building from source)
+
+## Clone and run
+
+```bash
+git clone https://github.com/btangonan/anima
+cd anima
+git lfs install && git lfs pull
+nvm use
+npm install
+npm run tauri dev
+```
+
+The app launches in dev mode. First-run onboarding appears once; you can dismiss it (skip voice) and proceed straight to the main UI.
+
+## What works without any extra setup
+
+- Multi-session sidebar (click `+` to start a session against any local project)
+- Companion (familiar) with chat bubble — starts a project session, asks questions, gets answers
+- Oracle re-rolls (click the eye icon)
+- Slash menu (`/`)
+- Nim economy (accrues from token usage)
+- History panel (toggle from the sidebar)
+- Settings panel (UI tab)
+- Vexil commentary daemon (background)
+
+## What's deliberately optional
+
+Live voice (STT/TTS). The default build runs in text mode — voice indicator stays gray. The bundled `anima-stt` PyInstaller is shipped via Git LFS but **disabled by default** (`ANIMA_SKIP_BUNDLED_STT=0` opts in once the binary stabilises). Anima expects an external bridge on `ws://127.0.0.1:9876` if you want live voice; see the project's internal docs for the bridge setup.
+
+If you click the voice indicator with no bridge running, Anima reports "Voice unavailable — text mode active" and continues. No crash, no retry storm.
+
+## Run the test suite
+
+```bash
+npm run test:all
+```
+
+Expected on a clean clone:
+
+- **JS (Vitest)**: 250 passed / 6 skipped (28 files)
+- **Rust (cargo test)**: 231 passed (13 binaries)
+
+The skipped tests are platform-specific (WebKit harness) or opt-in soak/PTY suites.
+
+If you see `localStorage.clear is not a function` failures, your Node is 22+ without the workaround — `npm run test` already exports `NODE_OPTIONS=--no-webstorage`, but if you're invoking vitest directly, set that env var.
+
+## Known limitations
+
+- **Bundled voice STT** is opt-in only and currently broken (missing `mlx_whisper`); the kill switch defaults skip-on. This is tracked separately and does not affect the rest of the app.
+- **macOS Gatekeeper**: a release build (`npm run tauri build`) is currently unsigned. Dev mode (`npm run tauri dev`) doesn't trigger Gatekeeper.
+- **Voice CI native lane** runs only on push to `main`/`release/*` because it requires Apple Silicon arm64. PRs trigger the mocked Linux lane only.
+
+## Reporting issues
+
+If something breaks, please include:
+
+- macOS version
+- Node version (`node --version`)
+- Output of `npm run test:all`
+- Console logs from `npm run tauri dev` (the Tauri window's DevTools — Cmd+Option+I)

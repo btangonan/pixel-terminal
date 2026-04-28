@@ -295,17 +295,16 @@ async fn start_one<R: Runtime + 'static>(
     kind: VoiceServiceKind,
     args: Vec<String>,
 ) -> Result<(), String> {
-    // STT bypass: the bundled anima-stt PyInstaller binary is missing mlx_whisper
-    // and crashes on every PTT release (observed 2026-04-25). launch.command spawns
-    // pixel_voice_bridge.py via the OmiWebhook venv (which HAS mlx_whisper) and sets
-    // ANIMA_SKIP_BUNDLED_STT=1 so we never spawn the broken binary. Without this
-    // flag, both clients race for the mic and the bundled one crashes on PTT release.
-    //
-    // The earlier voice_ready_count check was too late — venv bridge only sends
-    // voice_ready AFTER start_capture broadcasts, which happens AFTER the click,
-    // so the bundled spawn fires before the venv bridge can advertise itself.
-    if kind == VoiceServiceKind::Stt && std::env::var("ANIMA_SKIP_BUNDLED_STT").as_deref() == Ok("1") {
-        eprintln!("[voice] STT spawn skipped — ANIMA_SKIP_BUNDLED_STT=1 (external pixel_voice_bridge owns the mic)");
+    // Bundled STT is skip-by-default: the PyInstaller `anima-stt` is missing
+    // `mlx_whisper` and crashes on PTT release (observed 2026-04-25). Set
+    // ANIMA_SKIP_BUNDLED_STT=0 to opt in once the binary is fixed. Any other
+    // value (including unset) skips the spawn so the external pixel_voice_bridge
+    // owns the mic. The user's launch.command exports =1; fresh clones inherit
+    // unset, both skip cleanly.
+    if kind == VoiceServiceKind::Stt
+        && std::env::var("ANIMA_SKIP_BUNDLED_STT").as_deref() != Ok("0")
+    {
+        eprintln!("[voice] bundled STT spawn skipped (set ANIMA_SKIP_BUNDLED_STT=0 to enable)");
         return Ok(());
     }
 
@@ -363,25 +362,26 @@ pub async fn start_voice_sidecar<R: Runtime + 'static>(
         );
     }
 
-    // Wait for anima-stt to actually connect AND signal voice_ready before
-    // returning. Otherwise the JS click handler resolves while ws_clients is
-    // still empty, the user presses PTT immediately, and ptt_start broadcasts
-    // to ZERO clients (dropped on the floor — observed 2026-04-25). Polling
-    // voice_ready_count is the right signal because anima-stt only sends it
-    // after the mic InputStream is open and ready to accept audio.
+    // Wait for an STT client to signal voice_ready. When the bundled spawn was
+    // skipped (default for fresh clones), only an external bridge (e.g. user's
+    // pixel_voice_bridge.py) can provide voice_ready, so cap the wait short to
+    // avoid an 8s stall. When we actually spawned the bundled binary, give it
+    // the full 8s to come up.
+    let stt_skipped = std::env::var("ANIMA_SKIP_BUNDLED_STT").as_deref() != Ok("0");
+    let wait_ceiling_ms: u32 = if stt_skipped { 1500 } else { 8000 };
     let omi = app.state::<OmiBridgeState>();
     let mut waited_ms = 0u32;
-    while omi.voice_ready_count.load(Ordering::SeqCst) == 0 && waited_ms < 8000 {
+    while omi.voice_ready_count.load(Ordering::SeqCst) == 0 && waited_ms < wait_ceiling_ms {
         sleep(Duration::from_millis(100)).await;
         waited_ms += 100;
     }
     if omi.voice_ready_count.load(Ordering::SeqCst) == 0 {
-        eprintln!("[voice] start_voice_sidecar returning WITHOUT voice_ready after {}ms — STT may not be ready", waited_ms);
+        eprintln!("[voice] start_voice_sidecar returning WITHOUT voice_ready after {}ms — no STT client connected", waited_ms);
     } else {
         eprintln!("[voice] start_voice_sidecar — STT voice_ready after {}ms", waited_ms);
     }
 
-    voice_sidecar_health(state).await
+    voice_sidecar_health_inner(&app, &arc).await
 }
 
 #[tauri::command]
@@ -436,24 +436,46 @@ pub async fn restart_voice_sidecar<R: Runtime + 'static>(
         );
     }
 
-    voice_sidecar_health(state).await
+    voice_sidecar_health_inner(&app, &arc).await
 }
 
-#[tauri::command]
-pub async fn voice_sidecar_health(
-    state: State<'_, Arc<VoiceServicesState>>,
+/// Inner health probe used by start/restart paths that already have an
+/// AppHandle. The public Tauri command wraps this with State-based DI.
+///
+/// `stt_port_open` reports whether an STT client (bundled OR external bridge)
+/// has signaled `voice_ready` on the WS bridge. The previous TCP-connect probe
+/// to port 9876 was a structural lie: the app's own ws_bridge listener owns
+/// 9876, so the probe always returned true even when no STT client was
+/// connected (Codex 2026-04-28). The field name is preserved for JS/test
+/// compatibility; the meaning is now "STT client is ready."
+async fn voice_sidecar_health_inner<R: Runtime + 'static>(
+    app: &AppHandle<R>,
+    state: &Arc<VoiceServicesState>,
 ) -> Result<VoiceServiceStatus, String> {
     let (stt_running, tts_running) = {
-        let data = state.inner().data.lock().unwrap();
+        let data = state.data.lock().unwrap();
         (
             data.children.contains_key(&VoiceServiceKind::Stt),
             data.children.contains_key(&VoiceServiceKind::Tts),
         )
     };
+    let stt_voice_ready = app
+        .state::<OmiBridgeState>()
+        .voice_ready_count
+        .load(Ordering::SeqCst)
+        > 0;
     Ok(VoiceServiceStatus {
         stt_running,
         tts_running,
-        stt_port_open: port_open(STT_PORT).await,
+        stt_port_open: stt_voice_ready,
         tts_port_open: port_open(TTS_PORT).await,
     })
+}
+
+#[tauri::command]
+pub async fn voice_sidecar_health<R: Runtime + 'static>(
+    app: AppHandle<R>,
+    state: State<'_, Arc<VoiceServicesState>>,
+) -> Result<VoiceServiceStatus, String> {
+    voice_sidecar_health_inner(&app, state.inner()).await
 }

@@ -558,9 +558,16 @@ export function initVoice() {
       }
       // Open the mic gate — STT bridge blocks on start_capture before touching sounddevice.
       await invoke('start_voice_capture').catch(e => console.warn('[voice] start_voice_capture failed:', e));
-      // Optimistically show connected — omi:connected arrives later when bridge sends voice_ready.
-      omiConnected = true;
-      _omiIndicatorUpdate();
+      // Reflect actual STT readiness from the health response. The Rust side
+      // returns stt_port_open=true only when an STT client has signaled
+      // voice_ready, so this is the truthful first signal. omi:connected events
+      // will continue to keep this state synced.
+      if (status?.stt_port_open || status?.sttPortOpen) {
+        omiConnected = true;
+        _omiIndicatorUpdate();
+      } else {
+        _showDotStatus('Voice unavailable — text mode active');
+      }
       return status;
     } catch (err) {
       console.warn('[voice] start_voice_sidecar failed:', err);
@@ -650,7 +657,10 @@ export function initVoice() {
   });
   tauriListen('voice:crashed', (event) => {
     console.warn('[voice] sidecar crashed:', event.payload);
-    _showDotStatus(`${event.payload.service.toUpperCase()} restarted`);
+    omiConnected = false;
+    _omiIndicatorUpdate();
+    const reason = event.payload?.reason ? ` (${event.payload.reason})` : '';
+    _showDotStatus(`${event.payload.service.toUpperCase()} crashed${reason}`);
   });
   tauriListen('voice:port_unavailable', (event) => {
     _showDotStatus(`Port ${event.payload.port} unavailable`);

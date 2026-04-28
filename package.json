@@ -6,10 +6,10 @@
   "scripts": {
     "tauri": "tauri",
     "dev": "npm run tauri -- dev",
-    "test": "vitest run --exclude 'tests/soak/**'",
-    "test:coverage": "vitest run --exclude 'tests/soak/**' --coverage",
-    "test:all": "vitest run --exclude 'tests/soak/**' && cargo test --manifest-path src-tauri/Cargo.toml",
-    "test:soak": "SOAK=1 vitest run tests/soak/",
+    "test": "NODE_OPTIONS=--no-webstorage vitest run --exclude 'tests/soak/**'",
+    "test:coverage": "NODE_OPTIONS=--no-webstorage vitest run --exclude 'tests/soak/**' --coverage",
+    "test:all": "NODE_OPTIONS=--no-webstorage vitest run --exclude 'tests/soak/**' && cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:soak": "SOAK=1 NODE_OPTIONS=--no-webstorage vitest run tests/soak/",
     "harness": "python3 tests/harness/latency_harness.py",
     "harness:ci": "python3 tests/harness/latency_harness.py --ci"
   },
