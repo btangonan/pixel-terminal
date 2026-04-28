@@ -66,6 +66,7 @@ async function loadCompanion(buddyJson = null) {
 }
 
 beforeEach(() => {
+  localStorage.clear();
   vi.clearAllMocks();
 });
 
@@ -187,5 +188,140 @@ test('setVexilLogListener is called when addToVexilLog fires', async () => {
   expect(received[received.length - 1].some(e => e.msg === 'test message')).toBe(true);
 
   sessionMod.sessions.delete(id);
+  sessionMod.setActiveSessionId(null);
+});
+
+test('deny + pause writes anima gate response and emits anima:pause-session', async () => {
+  const sid = 'gate-session';
+  const writes = [];
+  _mockInvoke.mockImplementation(async (cmd, args) => {
+    if (cmd === 'read_file_as_text') {
+      if (args.path.endsWith(`anima_gate_${sid}.json`)) {
+        return JSON.stringify({
+          id: 'req-123',
+          tool: 'Bash',
+          input: { command: 'rm -rf build' },
+          expires: Math.floor(Date.now() / 1000) + 60,
+        });
+      }
+      throw new Error('no such file');
+    }
+    if (cmd === 'write_file_as_text') {
+      writes.push({ path: args.path, content: args.content });
+      return null;
+    }
+    if (cmd === 'js_log') return null;
+    return null;
+  });
+  document.body.innerHTML = '';
+  const sessionMod = await import('../src/session.js');
+  sessionMod.sessions.set(sid, { status: 'working', name: 'gate-test' });
+  sessionMod.setActiveSessionId(sid);
+  const mod = await import('../src/companion.js?t=' + Math.random());
+  const pauseSpy = vi.fn();
+  document.addEventListener('anima:pause-session', pauseSpy);
+
+  await mod.__testOnlyPollAnimaGate();
+  const denyPause = document.querySelector('[data-action="deny_pause"]');
+  expect(denyPause).toBeTruthy();
+  expect(document.getElementById('perm-tool')?.textContent).toBe('Bash');
+  expect(document.getElementById('perm-summary')?.textContent).toContain('rm -rf build');
+
+  denyPause.click();
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+
+  const response = writes.find(w => w.path.endsWith(`anima_gate_${sid}_response.json`));
+  expect(JSON.parse(response.content)).toEqual({
+    id: 'req-123',
+    approved: false,
+    action: 'deny_pause',
+  });
+  expect(pauseSpy).toHaveBeenCalledTimes(1);
+  expect(pauseSpy.mock.calls[0][0].detail).toEqual({ sessionId: sid });
+
+  sessionMod.sessions.delete(sid);
+  sessionMod.setActiveSessionId(null);
+});
+
+test('deny + pause event wiring kills the session child and reports idle status', async () => {
+  const sid = 'gate-pause-integration';
+  const writes = [];
+  _mockInvoke.mockImplementation(async (cmd, args) => {
+    if (cmd === 'read_file_as_text') {
+      if (args.path.endsWith(`anima_gate_${sid}.json`)) {
+        return JSON.stringify({
+          id: 'req-pause-1',
+          tool: 'Bash',
+          input: { command: 'deploy --prod' },
+          expires: Math.floor(Date.now() / 1000) + 60,
+        });
+      }
+      throw new Error('no such file');
+    }
+    if (cmd === 'write_file_as_text') {
+      writes.push({ path: args.path, content: args.content });
+      return null;
+    }
+    if (cmd === 'js_log') return null;
+    return null;
+  });
+
+  document.body.innerHTML = '';
+  const sessionMod = await import('../src/session.js');
+  const lifecycle = await import('../src/session-lifecycle.js?t=' + Math.random());
+  const child = { write: vi.fn(), kill: vi.fn(), pid: 777 };
+  const deps = {
+    renderSessionCard: vi.fn(),
+    setActiveSession: vi.fn(),
+    pushMessage: vi.fn(),
+    setStatus: vi.fn(),
+    handleEvent: vi.fn(),
+    updateWorkingCursor: vi.fn(),
+    showEmptyState: vi.fn(),
+    slashCommands: [],
+    hideSlashMenu: vi.fn(),
+    exitHistoryView: vi.fn(),
+    scanHistory: vi.fn(),
+  };
+  lifecycle.setLifecycleDeps(deps);
+  sessionMod.sessions.set(sid, {
+    id: sid,
+    cwd: '/tmp/gate-project',
+    name: 'gate-project',
+    status: 'working',
+    child,
+    toolPending: { pending: true },
+    _pendingQueue: [{ text: 'queued', shown: true }],
+  });
+  sessionMod.setActiveSessionId(sid);
+
+  const pauseHandler = (e) => lifecycle.pauseSession(e.detail?.sessionId);
+  document.addEventListener('anima:pause-session', pauseHandler);
+  const mod = await import('../src/companion.js?t=' + Math.random());
+
+  await mod.__testOnlyPollAnimaGate();
+  document.querySelector('[data-action="deny_pause"]').click();
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+
+  const response = writes.find(w => w.path.endsWith(`anima_gate_${sid}_response.json`));
+  expect(JSON.parse(response.content)).toMatchObject({
+    id: 'req-pause-1',
+    approved: false,
+    action: 'deny_pause',
+  });
+  const session = sessionMod.sessions.get(sid);
+  expect(child.kill).toHaveBeenCalledTimes(1);
+  expect(session.child).toBeNull();
+  expect(session._paused).toBe(true);
+  expect(session._pendingQueue).toEqual([]);
+  expect(session.toolPending).toEqual({});
+  expect(deps.setStatus).toHaveBeenCalledWith(sid, 'idle');
+  expect(deps.pushMessage).toHaveBeenCalledWith(sid, expect.objectContaining({
+    type: 'error',
+    text: expect.stringContaining('Permission request denied and session paused'),
+  }));
+
+  document.removeEventListener('anima:pause-session', pauseHandler);
+  sessionMod.sessions.delete(sid);
   sessionMod.setActiveSessionId(null);
 });

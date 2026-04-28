@@ -11,6 +11,7 @@ import { getBuddyTrigger, addToVexilLog } from './companion.js';
 import { getStagedAttachments, markAttachmentsSent, cleanupSession as cleanupAttachments, initSession as initAttachmentSession } from './attachments.js';
 import { getSlashCommands, isBuiltinCommand, loadSlashCommands } from './slash-menu.js';
 import { pxLog } from './logger.js';
+import { buildPermissionModeArgs } from './permission-args.js';
 
 const { Command } = window.__TAURI__.shell;
 const { open: openDialog } = window.__TAURI__.dialog;
@@ -30,6 +31,7 @@ let _deps = {
   setActiveSession: null,
   pushMessage: null,
   setStatus: null,
+  updateSessionCard: null,
   handleEvent: null,
   updateWorkingCursor: null,
   showEmptyState: null,
@@ -116,11 +118,11 @@ async function spawnClaude(id) {
   pxLog('SPAWN', `id:${id.slice(0,8)} cwd:${s.cwd} model:${s._modelOverride||'default'} effort:${s._effortOverride||'default'} continue:${!!s._interrupted}`);
   try {
     // ANIMA_PERMISSION_MODE selects the permission strategy:
-    //   bypass (default) — --permission-mode bypassPermissions (current shipped behavior)
+    //   bypass           — --permission-mode bypassPermissions (explicit unsafe opt-in)
     //   gated            — --strict-mcp-config + per-session MCP gate via
     //                      --permission-prompt-tool mcp__anima_<sid8>__approve (P2.A)
-    //   default          — falls through to bypass (P2.H flips the default after P2.G validation)
-    const permissionMode = (window.__ANIMA_PERMISSION_MODE__ || 'bypass').toLowerCase();
+    //   default          — Claude CLI default prompting
+    const permissionMode = (window.__ANIMA_PERMISSION_MODE__ || 'default').toLowerCase();
 
     // P2.G — fail-closed supervisor. Before spawning in `gated` mode, check
     // whether the circuit breaker has tripped for this session (≥3 gate
@@ -152,7 +154,7 @@ async function spawnClaude(id) {
     // Record which permission strategy this spawn actually used so the close
     // handler can attribute crashes correctly (only gated-mode crashes feed
     // the circuit breaker).
-    let spawnMode = 'bypass';
+    let spawnMode = 'default';
 
     if (permissionMode === 'gated' && !circuitOpen) {
       try {
@@ -170,8 +172,13 @@ async function spawnClaude(id) {
         spawnMode = 'gated';
         pxLog('P2A', `gated id:${id.slice(0,8)} flag=${info.toolFlag} engine=${bin.engine}`);
       } catch (err) {
-        pxLog('P2A', `gate setup failed — falling back to bypass: ${err}`);
-        claudeArgs.push('--permission-mode', 'bypassPermissions');
+        pxLog('P2A', `gate setup failed — downshifting to default permissions: ${err}`);
+        claudeArgs.push('--permission-mode', 'default');
+        spawnMode = 'degraded';
+        _deps.pushMessage(id, {
+          type: 'error',
+          text: `permission gate setup failed; running in CLI default-prompt mode. Error: ${err}`,
+        });
       }
     } else if (permissionMode === 'gated' && circuitOpen) {
       // Fail-closed fallback: CLI prompts instead of MCP gate. Red banner
@@ -183,8 +190,14 @@ async function spawnClaude(id) {
         type: 'error',
         text: 'permission gate degraded; running in CLI default-prompt mode — every tool will prompt in CLI. Re-enable gated mode from Settings after investigating the gate fault.',
       });
+    } else if (permissionMode === 'bypass') {
+      const resolved = buildPermissionModeArgs(permissionMode);
+      claudeArgs.push(...resolved.args);
+      spawnMode = resolved.spawnMode;
     } else {
-      claudeArgs.push('--permission-mode', 'bypassPermissions');
+      const resolved = buildPermissionModeArgs(permissionMode);
+      claudeArgs.push(...resolved.args);
+      spawnMode = resolved.spawnMode;
     }
     s._spawnMode = spawnMode;
     // Inject compaction-resilience guidance (helps Claude recover after context compression)
@@ -227,6 +240,12 @@ async function spawnClaude(id) {
         return;
       }
       s.child = null;
+      if (s._paused) {
+        s._paused = false;
+        s._manualClose = false;
+        _deps.setStatus(id, 'idle');
+        return;
+      }
       if (code !== 0 && !s._manualClose) {
         pxLog('CRASH', `id:${id.slice(0,8)} exit:${code} mode:${s._spawnMode} — restarting`);
         // P2.G — only gated-mode crashes count toward the gate-circuit breaker.
@@ -273,6 +292,24 @@ function interruptSession(id) {
   // Eager respawn: start --continue immediately so Claude warms up with full context
   // while user thinks. By the time they type, s.child is ready → fast response.
   spawnClaude(id);
+}
+
+function pauseSession(id) {
+  const s = sessions.get(id);
+  if (!s) return;
+  pxLog('PAUSE', `id:${id.slice(0,8)} cwd:${s.cwd}`);
+  const child = s.child;
+  s._manualClose = !!child;
+  s._paused = true;
+  s._pendingQueue = [];
+  s.toolPending = {};
+  try { child?.kill(); } catch (_) {}
+  s.child = null;
+  _deps.setStatus(id, 'idle');
+  _deps.pushMessage(id, {
+    type: 'error',
+    text: 'Permission request denied and session paused. Send a new message to restart when ready.',
+  });
 }
 
 function killSession(id) {
@@ -663,4 +700,4 @@ async function pickFolder() {
   }
 }
 
-export { createSession, spawnClaude, killSession, interruptSession, sendMessage, expandSlashCommand, warnIfUnknownCommand, pickFolder, writeTaskLedger };
+export { createSession, spawnClaude, killSession, interruptSession, pauseSession, sendMessage, expandSlashCommand, warnIfUnknownCommand, pickFolder, writeTaskLedger };

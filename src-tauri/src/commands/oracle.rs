@@ -200,7 +200,8 @@ fn strip_for_speech(text: &str) -> String {
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Fire-and-forget TTS via macOS `say`. Reads ttsEnabled/ttsVoice from buddy.json.
+/// Fire-and-forget TTS via macOS `say`. Kept for reference; voice.js now owns TTS via WS bridge.
+#[allow(dead_code)]
 fn tts_speak(text: &str) {
     let cleaned = strip_for_speech(text);
     if cleaned.is_empty() { return; }
@@ -470,6 +471,7 @@ pub async fn oracle_query(
         .ok_or_else(|| "oracle unreachable".to_string())?;
 
     println!("[oracle] query → \"{}\"", reply.chars().take(80).collect::<String>());
-    tts_speak(&reply);
+    // TTS is handled in voice.js playTTS() → pixel_tts_bridge.py (Qwen3-TTS).
+    // The macOS `say` path here is removed to prevent double-speak.
     Ok(serde_json::json!({"msg": reply, "req_id": req_id}))
 }

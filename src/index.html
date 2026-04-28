@@ -10,6 +10,8 @@
   <link rel="stylesheet" href="styles/companion.css" />
   <link rel="stylesheet" href="styles/history.css" />
   <link rel="stylesheet" href="styles/voice.css" />
+  <link rel="stylesheet" href="styles/voice-split.css" />
+  <link rel="stylesheet" href="styles/onboarding.css" />
   <!-- marked + DOMPurify loaded as UMD globals -->
   <script src="marked.umd.js"></script>
   <script src="purify.min.js"></script>
@@ -81,10 +83,12 @@
         <div id="voice-log-header">
           <div id="voice-log-tabs">
             <button class="voice-tab active" id="vexil-tab-btn" data-vtab="vexil">ORACLE</button>
-            <button class="voice-tab" data-vtab="voice">VOICE</button>
             <button class="voice-tab" data-vtab="files">FILES</button>
           </div>
-          <button id="btn-clear-voice-log" title="Clear log">CLR</button>
+          <div id="voice-log-header-right">
+            <button id="btn-clear-voice-log" title="Clear log">CLR</button>
+            <button id="omi-indicator" title="Voice bridge (disconnected)" aria-label="Toggle voice listening"></button>
+          </div>
         </div>
         <div id="vexil-bio" class="vexil-bio">
           <div id="vexil-ascii"></div>
@@ -150,7 +154,6 @@
             spellcheck="false"
           ></textarea>
           <button id="btn-send" title="Send (Enter)" style="display:none"></button>
-          <button id="omi-indicator" title="Voice bridge (disconnected)" aria-label="Toggle voice listening"></button>
           <button id="always-on-btn" title="Always-on mode — transcribes everything. Hold fn for push-to-talk instead. (Ctrl+Shift+A)" aria-label="Toggle always-on mic">OPEN</button>
           <button id="settings-btn" title="Voice settings">⚙</button>
           <div id="settings-panel" class="hidden">

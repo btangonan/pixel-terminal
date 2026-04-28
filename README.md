@@ -76,7 +76,13 @@ Commentary runs as short background prompts via the Claude CLI, capped at 2 conc
 
 - macOS 13 Ventura or later
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
-- Node.js 18+
+- Node.js 18 or 20 LTS (the repo's `.nvmrc` pins 20; run `nvm use` after cloning). Node 22+ trips a known [vitest × Node Web Storage interaction](https://github.com/vitest-dev/vitest/issues/8757); on those versions, run tests with `NODE_OPTIONS=--no-webstorage npm test`.
+- [Git LFS](https://git-lfs.com) for cloning (bundled voice sidecar binaries are LFS-tracked)
+- Rust toolchain (`rustup`) and Xcode Command Line Tools (`xcode-select --install`) — required for `npm run tauri dev` / `npm run tauri build`
+
+### Voice (optional)
+
+Live voice STT/TTS is optional. The default build runs in **text mode** — sessions, companion, oracle, nim, and history work fully without any voice setup, and the voice indicator stays gray. To enable live voice, run an external `pixel_voice_bridge.py` against `ws://127.0.0.1:9876` before launching Anima (see [TESTING.md](./TESTING.md) for the supported flow).
 
 ## Getting Started
 
@@ -103,6 +109,8 @@ The companion generates on first session. @nim@ accrues automatically.
 ```bash
 git clone https://github.com/btangonan/anima
 cd anima
+git lfs install && git lfs pull   # required: bundled voice binaries are LFS-tracked
+nvm use                            # picks up .nvmrc (Node 20)
 npm install
 npm run tauri dev
 ```

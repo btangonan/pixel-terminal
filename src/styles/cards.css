@@ -451,11 +451,48 @@ canvas.sprite-canvas {
 .fc-reroll-slot--oracle {
   width: 100%;
   margin-left: 0;
-  justify-content: flex-end;
+  justify-content: space-between;
   margin-top: 10px;
   padding-top: 8px;
   border-top: 1px solid var(--border);
 }
+
+/* Voice picker (left side of the oracle re-roll row) */
+.fc-voice-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font);
+}
+.fc-voice-label {
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  letter-spacing: 1px;
+}
+.fc-voice-select {
+  background: transparent;
+  color: var(--text-mid);
+  border: 1px solid var(--border-hi);
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-mute) 50%),
+                    linear-gradient(135deg, var(--text-mute) 50%, transparent 50%);
+  background-position: calc(100% - 9px) 50%, calc(100% - 5px) 50%;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+  padding-right: 18px;
+}
+.fc-voice-select:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.fc-voice-select:focus { outline: none; border-color: var(--accent); }
+.fc-voice-select option { background: #111; color: var(--text-mid); }
 
 .fc-reroll-btn {
   background: none;

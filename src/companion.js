@@ -368,7 +368,7 @@ async function writeApproval(approved) {
 // The session_id in the filename matches the active session; the gate
 // process itself was spawned by session-lifecycle.js with ANIMA_SESSION set.
 
-async function pollAnimaGate() {
+export async function __testOnlyPollAnimaGate() {
   if (_animaGatePending) return;
 
   const sid = getActiveSessionId?.();
@@ -751,7 +751,7 @@ export async function initCompanion() {
   // Start polling — Anima permission gate first (blocks a tool call),
   // then legacy hook gate, then lint file.
   setInterval(async () => {
-    await pollAnimaGate();
+    await __testOnlyPollAnimaGate();
     await pollHookGate();
     await pollLintFile();
   }, POLL_INTERVAL);

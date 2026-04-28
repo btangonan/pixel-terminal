@@ -34,7 +34,7 @@ function currentMode() {
   const raw = window.__ANIMA_PERMISSION_MODE__;
   return typeof raw === 'string' && VALID_MODES.has(raw.toLowerCase())
     ? raw.toLowerCase()
-    : 'bypass';
+    : 'default';
 }
 
 function paintActive() {
