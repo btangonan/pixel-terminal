@@ -11,14 +11,14 @@ import { sendMessage, writeTaskLedger } from './session-lifecycle.js';
 import { classifyHookEvent } from './hook-events.js';
 
 // ── Model context window sizes (tokens) ───────────────────────────────
-// NOTE: Opus 4.6 and Sonnet 4.6 support 1M tokens at the API level (GA March 2026),
-// but Claude Code currently enforces a 200K effective window. When Claude Code
-// enables 1M, update these values. The baseline capture + compaction detection
-// will self-correct regardless. See: github.com/anthropics/claude-code/issues/24208
+// Opus 4.7, Opus 4.6, and Sonnet 4.6 run at 1M tokens (Claude Code GA
+// Mar 2026). Older 4.5/3.x models still cap at 200K. These match terminal
+// statusline semantics — divide usage by the model's actual window.
 // Live query alternative: GET https://api.anthropic.com/v1/models/{id} → max_input_tokens
 const MODEL_CONTEXT = {
-  'claude-opus-4-6':      200_000,  // API supports 1M — Claude Code caps at 200K
-  'claude-sonnet-4-6':    200_000,  // API supports 1M — Claude Code caps at 200K
+  'claude-opus-4-7':      1_000_000,
+  'claude-opus-4-6':      1_000_000,
+  'claude-sonnet-4-6':    1_000_000,
   'claude-haiku-4-5':     200_000,
   'claude-sonnet-4-5':    200_000,
   'claude-opus-4-5':      200_000,
@@ -63,7 +63,14 @@ function refreshContextSideband(id) {
           / Math.max(1, (s._contextWindow || 200_000) - s._contextBaseline) * 100))
       : 0;
     const isJSONL = sb.source === 'jsonl';
-    if (isJSONL && typeof s._authoritativePct === 'number' && sb.pct < s._authoritativePct && !s._compactionDetected) {
+    // Protect against stale JSONL: accept a DECREASE only if compaction fired,
+    // or the window size changed (e.g. hook fixed to use 1M for Opus 4.7
+    // instead of stale 200K — sb.window != cached _contextWindow).
+    const windowChanged = sb.window && s._contextWindow && sb.window !== s._contextWindow;
+    if (isJSONL && typeof s._authoritativePct === 'number'
+        && sb.pct < s._authoritativePct
+        && !s._compactionDetected
+        && !windowChanged) {
       pxLog('CTX', `id:${id.slice(0,8)} JSONL ${sb.pct}% < current ${s._authoritativePct}% — skipped`);
       return;
     }
