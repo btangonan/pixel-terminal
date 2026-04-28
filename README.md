@@ -78,6 +78,7 @@ Commentary runs as short background prompts via the Claude CLI, capped at 2 conc
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
 - Node.js 18 or 20 LTS (the repo's `.nvmrc` pins 20; run `nvm use` after cloning). Node 22+ trips a known [vitest × Node Web Storage interaction](https://github.com/vitest-dev/vitest/issues/8757); on those versions, run tests with `NODE_OPTIONS=--no-webstorage npm test`.
 - [Git LFS](https://git-lfs.com) for cloning (bundled voice sidecar binaries are LFS-tracked)
+- Rust toolchain (`rustup`) and Xcode Command Line Tools (`xcode-select --install`) — required for `npm run tauri dev` / `npm run tauri build`
 
 ### Voice (optional)
 

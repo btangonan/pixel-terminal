@@ -2,15 +2,17 @@ name: Voice CI
 
 # Dual-lane matrix for the voice loop (cascade: Moonshine STT → Claude → Qwen3-TTS).
 #
-#   - "mocked"  runs on every PR on ubuntu-latest. Rust tests compile with cfg
-#     guards that short-circuit real macOS probes to unsupported reports, and
-#     Python tests use synthetic WAV fixtures. No weights downloaded, no audio
-#     hardware required.
+#   - "mocked"  runs on every PR on ubuntu-latest. JS unit tests, the E2E
+#     human-out-of-loop voice flow (mocked WebSocket + AudioContext), and the
+#     latency harness contract check (--ci, no real probes). Rust tests are
+#     NOT run here: the Tauri runtime transitively depends on macOS frameworks
+#     (core-graphics, AppKit) that cannot link on Linux. The macOS lane in
+#     test.yml is the Rust gate.
 #
 #   - "native"  runs only on push to main or release/* branches on macos-14
 #     (Apple Silicon arm64). Exercises the real host_check probe, the latency
 #     harness in --ci mode (thresholds assert against acceptance.yaml), and
-#     the soak tests.
+#     the soak tests. This is the only lane that runs Rust tests under voice-ci.
 #
 # See docs/ci-host-requirements.md for the full contract.
 

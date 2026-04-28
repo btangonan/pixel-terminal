@@ -5,8 +5,11 @@
  * through:
  *
  *   1. Welcome / what this enables (STT + TTS, local-first, $0 cost)
- *   2. Sidecar readiness — starts bundled anima-stt + anima-tts via Tauri invoke.
- *   3. Connection test — probes STT + TTS ports via voice_sidecar_health.
+ *   2. Sidecar readiness — invokes start_voice_sidecar. Bundled anima-stt is
+ *      skip-by-default (set ANIMA_SKIP_BUNDLED_STT=0 to opt in once stable);
+ *      live voice arrives via an external WS bridge on 127.0.0.1:9876.
+ *   3. Connection test — voice_sidecar_health reports stt_port_open=true only
+ *      when an STT client has signaled voice_ready (not a TCP probe).
  *   4. Opt-in toggles — tts (voice out). Default OFF.
  *      Flipping tts=on flips localStorage.ttsEnabled=1.
  *
