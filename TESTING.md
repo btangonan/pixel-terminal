@@ -4,11 +4,12 @@ A one-page guide for clone-and-test. Targets a fresh Mac (macOS 13+) with no pri
 
 ## Prerequisites
 
-- macOS 13 Ventura or later (Apple Silicon recommended)
+- macOS 13 Ventura or later, Apple Silicon
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated (`claude login`)
-- Node.js 18 or 20 LTS (use `nvm use` to pick up `.nvmrc`)
-- [Git LFS](https://git-lfs.com) (`brew install git-lfs`)
-- Rust toolchain (`rustup` — only required if running `cargo test` or building from source)
+- Node.js 20 LTS — pinned by `.nvmrc`; `nvm use` after cloning. Node 22+ trips [vitest #8757](https://github.com/vitest-dev/vitest/issues/8757); workaround in the test-suite section below.
+- [Git LFS](https://git-lfs.com) (`brew install git-lfs`) — required at clone time
+- Rust toolchain (`rustup`) — required for `npm run tauri dev` (the steps below) and for `cargo test`
+- Xcode Command Line Tools (`xcode-select --install`) — required for the macOS link step in any Tauri build
 
 ## Clone and run
 
@@ -36,9 +37,9 @@ The app launches in dev mode. First-run onboarding appears once; you can dismiss
 
 ## What's deliberately optional
 
-Live voice (STT/TTS). The default build runs in text mode — voice indicator stays gray. The bundled `anima-stt` PyInstaller is shipped via Git LFS but **disabled by default** (`ANIMA_SKIP_BUNDLED_STT=0` opts in once the binary stabilises). Anima expects an external bridge on `ws://127.0.0.1:9876` if you want live voice; see the project's internal docs for the bridge setup.
+Live voice (STT/TTS). The default build runs in text mode — voice indicator stays gray. The bundled `anima-stt` PyInstaller is shipped via Git LFS but **disabled by default** because it's missing `mlx_whisper`; set `ANIMA_SKIP_BUNDLED_STT=0` to opt in once the binary stabilises. To run live voice today, point an external WebSocket STT bridge at `ws://127.0.0.1:9876` before launching Anima — there's no public turnkey bridge in this repo yet.
 
-If you click the voice indicator with no bridge running, Anima reports "Voice unavailable — text mode active" and continues. No crash, no retry storm.
+If you click the voice indicator with no bridge running, Anima shows "Voice unavailable — text mode active" and continues. No crash, no retry storm.
 
 ## Run the test suite
 

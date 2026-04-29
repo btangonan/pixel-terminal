@@ -74,29 +74,32 @@ Commentary runs as short background prompts via the Claude CLI, capped at 2 conc
 
 ## Requirements
 
-- macOS 13 Ventura or later
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
-- Node.js 18 or 20 LTS (the repo's `.nvmrc` pins 20; run `nvm use` after cloning). Node 22+ trips a known [vitest × Node Web Storage interaction](https://github.com/vitest-dev/vitest/issues/8757); on those versions, run tests with `NODE_OPTIONS=--no-webstorage npm test`.
-- [Git LFS](https://git-lfs.com) for cloning (bundled voice sidecar binaries are LFS-tracked)
-- Rust toolchain (`rustup`) and Xcode Command Line Tools (`xcode-select --install`) — required for `npm run tauri dev` / `npm run tauri build`
+- macOS 13 Ventura or later, Apple Silicon
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated (`claude login`)
+- Node.js 20 LTS — pinned by `.nvmrc`; run `nvm use` after cloning. Node 22+ trips [vitest #8757](https://github.com/vitest-dev/vitest/issues/8757); on those versions run tests with `NODE_OPTIONS=--no-webstorage npm test`.
+- [Git LFS](https://git-lfs.com) — required at clone time; the bundled voice sidecar binaries are LFS-tracked
+- Rust toolchain (`rustup`) and Xcode Command Line Tools (`xcode-select --install`) — required for `npm run tauri dev` and `npm run tauri build`
 
 ### Voice (optional)
 
-Live voice STT/TTS is optional. The default build runs in **text mode** — sessions, companion, oracle, nim, and history work fully without any voice setup, and the voice indicator stays gray. To enable live voice, run an external `pixel_voice_bridge.py` against `ws://127.0.0.1:9876` before launching Anima (see [TESTING.md](./TESTING.md) for the supported flow).
+Live voice STT/TTS is optional and defaults off. Without it, the indicator stays gray and the rest of the app — sessions, companion, oracle, nim, history, slash menu — works fully. The bundled `anima-stt` sidecar is shipped via LFS but disabled by default (it's missing `mlx_whisper`); enable it with `ANIMA_SKIP_BUNDLED_STT=0` once that lands. To run live voice today, point an external WebSocket STT bridge at `ws://127.0.0.1:9876` before launching Anima.
 
 ## Getting Started
 
-1. Install [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code):
+1. Install and authenticate Claude Code:
    ```bash
    npm install -g @anthropic-ai/claude-code
-   ```
-2. Authenticate:
-   ```bash
    claude login
    ```
-3. Download `Anima.dmg` from [Releases](https://github.com/btangonan/anima/releases)
-4. Open the app
-5. Point it at a project directory and start a session
+2. Build from source (see below — no signed `.dmg` is published yet):
+   ```bash
+   git clone https://github.com/btangonan/anima
+   cd anima
+   git lfs install && git lfs pull
+   nvm use && npm install
+   npm run tauri dev
+   ```
+3. Point it at a project directory and start a session.
 
 The companion generates on first session. @nim@ accrues automatically.
 
@@ -115,17 +118,18 @@ npm install
 npm run tauri dev
 ```
 
-Production build:
+Production build (currently unsigned; macOS Gatekeeper will warn on first launch):
 
 ```bash
 npm run tauri build
 # Output: src-tauri/target/release/bundle/
 ```
 
-Rust tests:
+Tests:
 
 ```bash
-cd src-tauri && cargo test
+npm run test:all                   # vitest + cargo test
+cd src-tauri && cargo clippy       # lint
 ```
 
 ## How It Works
