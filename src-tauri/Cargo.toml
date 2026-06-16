@@ -3,6 +3,7 @@ name = "pixel-terminal"
 version = "0.1.0"
 description = "A Tauri App"
 authors = ["you"]
+license = "MIT"
 edition = "2021"
 default-run = "pixel-terminal"
 
@@ -41,4 +42,3 @@ tokio = { version = "1", features = ["rt", "macros"] }
 
 [lints.clippy]
 unwrap_used = "warn"
-
